@@ -108,14 +108,14 @@ function draw() {
   else if (drawMode === 'battle') {
     // A very short, small-amplitude shake on taking a hit (battle.hitShakeT,
     // set in hurt(), battle-core.js), plus a second source that ramps in
-    // right alongside the Reckoning's hard-timeout white-out
-    // (battle.erifReckoningFadeT, 0-1 over its last 5s — see
-    // updateErifHandsFinale, erif.js) so the screen visibly rattles apart
-    // as it fades, not just goes quietly white. Both wrap only the arena
-    // draw call so the controls legend/volume meters/pause overlay drawn
-    // below stay put.
+    // right alongside either of Erif's hard-timeout white-outs
+    // (battle.erifReckoningFadeT/erifFightFadeT, 0-1 over their last 5s —
+    // see updateErifHandsFinale/updateErif, erif.js) so the screen visibly
+    // rattles apart as it fades, not just goes quietly white. Both wrap only
+    // the arena draw call so the controls legend/volume meters/pause overlay
+    // drawn below stay put.
     const hitShake = battle ? (battle.hitShakeT / .12) * 4 : 0;
-    const fadeShake = battle ? battle.erifReckoningFadeT * 9 : 0;
+    const fadeShake = battle ? Math.max(battle.erifReckoningFadeT, battle.erifFightFadeT) * 9 : 0;
     const shakeMag = hitShake + fadeShake;
     if (shakeMag > 0) {
       ctx.save();

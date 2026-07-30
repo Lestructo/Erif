@@ -241,6 +241,7 @@ function makeBattle(type) {
     erifBounceBalls: [], // universal wall-bouncing projectiles, any finger can fire one
     erifEyeBalls: [], // permanent wall-bouncing "eyes" — one popped out per head-HP loss, never break, up to 8 by fight's end
     erifReckoningFadeT: 0, // 0-1 white-out progress for the final 5s of the hard time limit
+    erifFightFadeT: 0, // same white-out progress, but for the whole fight's own hard 145s cap (see ERIF_FIGHT_TIME_LIMIT, erif.js) — every phase before the Reckoning
     punchFlashT: 0, punchDir: 0, // the boxing-glove shield-punch visual
     trueVictoryStarted: false,
     trueVictoryT: 0,
@@ -522,6 +523,10 @@ function updateBattle(dt) {
   // Phase 10 (Hard's true final phase) is won/lost through its own hp pool,
   // never this generic duration timeout — excluded explicitly so a long
   // twist-phase attempt can never fall through to the ordinary victory text.
-  if (mode === 'battle' && battle.t >= battle.duration && battle.phase !== PHASE_LAST_WAGER) finishBattle(true);
+  // Erif's own fight is excluded too, for a different reason: it now has its
+  // own real hard 145s cap (ERIF_FIGHT_TIME_LIMIT, updateErif in erif.js)
+  // that ends in an actual loss, replacing the old soft duration-elapsed
+  // auto-win fallback this line still is for every lieutenant.
+  if (mode === 'battle' && battle.t >= battle.duration && battle.phase !== PHASE_LAST_WAGER && battle.type !== 'erif') finishBattle(true);
   if (tap('r')) finishBattle(false, true);
 }

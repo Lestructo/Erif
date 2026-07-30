@@ -134,7 +134,12 @@ function drawBoot() {
 }
 
 // Hand-built vector line-art portraits, one per lieutenant plus Erif.
-function drawBossIcon(type, x, y, ghost = false, scale = 1) {
+// eyesLeft: only meaningful for type==='erif' — caps how many of the two
+// HP-tied orbit rings' eyes (8 total, see below) actually get drawn, so the
+// live Reckoning head HUD (drawErifHeadHUD) can visibly pop them out one by
+// one as battle.erifHeadHp drops. Every other caller (header, hub, victory,
+// title) leaves this null and gets the full, untouched icon.
+function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null) {
   const now = performance.now() / 1000;
   ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale); ctx.strokeStyle = ctx.fillStyle = '#fff'; ctx.globalAlpha = ghost ? .35 : 1;
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -449,6 +454,11 @@ function drawBossIcon(type, x, y, ghost = false, scale = 1) {
       ctx.setLineDash([]);
       ctx.fillStyle = EMBER;
       for (let i = 0; i < 4; i++) {
+        // Only the inner two rings (8 eyes total) are tied to eyesLeft — the
+        // outer ring stays a fixed decorative flourish regardless of HP, so
+        // the icon never goes fully eyeless while the fight's still going.
+        const flatIndex = ring * 4 + i;
+        if (eyesLeft !== null && ring < 2 && flatIndex >= eyesLeft) continue;
         const a = a0 + i * Math.PI / 2 + (ring ? Math.PI / 4 : 0);
         eye(Math.cos(a) * rr, Math.sin(a) * rr * .68, 4.5, 2.6, a);
       }
@@ -868,7 +878,7 @@ function drawErifHeadHUD() {
   // than trying to wrap the call in an outer alpha, which drawBossIcon would
   // just stomp. Full opacity reads as "part of the fight" even more
   // directly than a partial dim would have.
-  drawBossIcon('erif', hx, hy, false, ERIF_HEAD_SCALE);
+  drawBossIcon('erif', hx, hy, false, ERIF_HEAD_SCALE, battle.erifHeadHp);
 
   const pipW = 13, gap = 3, total = battle.erifHeadMaxHp * (pipW + gap) - gap, startX = hx - total / 2, pipY = hy + 40 + 132 * ERIF_HEAD_SCALE;
   for (let i = 0; i < battle.erifHeadMaxHp; i++) {
@@ -1428,11 +1438,6 @@ function drawBattle() {
     // below), so showing "ALL EIGHT BRANDS..." here at the same time would
     // just overlay text on top of text.
     if (!battle.q && !battle.echoSequence.length) text('ALL EIGHT BRANDS ARE ACTIVE', W / 2, STATUS_Y, 15, 'center', .72);
-  } else if (battle.type === 'erif' && battle.phase === PHASE_LAST_WAGER) {
-    // The Reckoning (Hard-only) — Erif's own head is never a player target
-    // (see erif.js), so this is just the ward-break progress readout now,
-    // no exposed/open flashing state to track.
-    text(`${battle.erifWardsDestroyed}/${REPRISE_ORDER.length} WARDS BROKEN`, W / 2, STATUS_Y, 15, 'center', .72);
   }
 
   const mech = activeMechanic();
@@ -1576,13 +1581,16 @@ function drawBattle() {
     ctx.restore();
   }
 
-  // The Reckoning's hard 100s time limit (see battle.erifReckoningFadeT,
-  // erif.js) — a full-screen white-out ramping in over the final 5 seconds,
-  // "everything breaking down." Drawn last, on top of everything else
-  // (including the hit edge-flare above), so hazards/hands/the head all
-  // keep rendering right up until the screen actually goes white.
-  if (battle.erifReckoningFadeT > 0) {
-    ctx.save(); ctx.fillStyle = '#fff'; ctx.globalAlpha = battle.erifReckoningFadeT;
+  // Erif's hard time limits (see battle.erifReckoningFadeT/erifFightFadeT,
+  // erif.js — the Reckoning's own 100s cap and the whole fight's 145s cap
+  // respectively, mutually exclusive in practice) — a full-screen white-out
+  // ramping in over the final 5 seconds, "everything breaking down." Drawn
+  // last, on top of everything else (including the hit edge-flare above), so
+  // hazards/hands/the head all keep rendering right up until the screen
+  // actually goes white.
+  const fightFade = Math.max(battle.erifReckoningFadeT, battle.erifFightFadeT);
+  if (fightFade > 0) {
+    ctx.save(); ctx.fillStyle = '#fff'; ctx.globalAlpha = fightFade;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
   }

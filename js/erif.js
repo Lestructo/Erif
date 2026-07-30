@@ -1119,7 +1119,11 @@ const EYE_BALL_SPEED = BOUNCE_BALL_SPEED * .5, EYE_BALL_R = BOUNCE_BALL_R * 1.5;
 // did, so it still tracks the box's own grow-in animation for free.
 function erifHomeAnchor() {
   const b = battle.box;
-  return { x: b.x + b.w * .5, y: b.y + b.h * .40 };
+  // Nudged up from .40 — sitting closer to box-center made the big head
+  // portrait (see drawErifHeadHUD) overlap the gale gust's arena-centered
+  // wind arrow (drawBattle, render.js), which reads there specifically
+  // because it's centered in the box. Higher up leaves that arrow clear.
+  return { x: b.x + b.w * .5, y: b.y + b.h * .24 };
 }
 function handDockPos(index) {
   const home = erifHomeAnchor();
@@ -1466,11 +1470,21 @@ function handleErifPunch() {
       beginErifTrueVictory();
       return;
     }
-    // Retreats, recharges for HAND_RECHARGE_TIME, then re-equips a new
-    // random ward and rejoins on its own — see the 'retreating'/
-    // 'recharging' branches in updateErifHand.
-    startHandTravel(target, { x: target.x, y: target.y }, handDockPos(target.id), RETRACT_SPEED, RETRACT_MIN_TIME, RETRACT_MAX_TIME);
-    target.state = 'retreating'; target.ward = null;
+    if (battle.erifWardPool.length) {
+      // Retreats, recharges for HAND_RECHARGE_TIME, then re-equips a new
+      // random ward and rejoins on its own — see the 'retreating'/
+      // 'recharging' branches in updateErifHand.
+      startHandTravel(target, { x: target.x, y: target.y }, handDockPos(target.id), RETRACT_SPEED, RETRACT_MIN_TIME, RETRACT_MAX_TIME);
+      target.state = 'retreating'; target.ward = null;
+    } else {
+      // Nothing left in the pool to recharge it with — no point sending it
+      // through a whole retreat-and-recharge cycle just to land on 'gone'
+      // anyway. Destroy it outright, right here, with its own real feedback
+      // beat instead of quietly idling off to the dock first.
+      target.state = 'gone'; target.ward = null;
+      kick(.07); tone(70, .3, 'sawtooth', .06); noiseHit(.14, .04, 900);
+      spawnSparks(target.x, target.y, 14, { color: EMBER, speed: [90, 220], life: .45 });
+    }
   } else {
     // A non-breaking hit closes the window immediately instead of leaving it
     // vulnerable for the rest of HAND_VULNERABLE_TIME — one slam, one hit,
@@ -1587,6 +1601,10 @@ function updateErifHandsFinale(dt) {
   // ordinary damage, so debug invulnerability doesn't cover it.
   const remaining = RECKONING_TIME_LIMIT - (battle.t - battle.phaseStartT);
   battle.erifReckoningFadeT = remaining > RECKONING_FADE_WINDOW ? 0 : clamp(1 - remaining / RECKONING_FADE_WINDOW, 0, 1);
+  // Fades the theme out alongside the white-out/shake instead of leaving it
+  // at full volume right up to the abrupt stopMusic() finishBattle(false)
+  // below fires — same treatment the whole-fight timer above uses.
+  if (remaining <= RECKONING_FADE_WINDOW) musicFadeMult = clamp(remaining / RECKONING_FADE_WINDOW, 0, 1);
   if (remaining <= 0) {
     finishBattle(false);
     battle.clearText = 'IT ALL COMES APART.';
@@ -1626,8 +1644,22 @@ function updateErifTrueVictory(dt) {
   }
 }
 
+// A hard cap on the whole Erif fight (every phase up through Enraged/the
+// twist — the Reckoning has its own separate, later cap, see
+// RECKONING_TIME_LIMIT), same white-fade/shake/music-fade/loss treatment as
+// that one. Replaces the old soft battle.duration auto-win fallback (see
+// updateBattle, battle-core.js) with a real hard loss for Erif specifically.
+const ERIF_FIGHT_TIME_LIMIT = 145, ERIF_FIGHT_FADE_WINDOW = 5;
 function updateErif(dt) {
   if (battle.phase === PHASE_LAST_WAGER) { updateErifHandsFinale(dt); return; }
+  const fightRemaining = ERIF_FIGHT_TIME_LIMIT - battle.t;
+  battle.erifFightFadeT = fightRemaining > ERIF_FIGHT_FADE_WINDOW ? 0 : clamp(1 - fightRemaining / ERIF_FIGHT_FADE_WINDOW, 0, 1);
+  if (fightRemaining <= ERIF_FIGHT_FADE_WINDOW) musicFadeMult = clamp(fightRemaining / ERIF_FIGHT_FADE_WINDOW, 0, 1);
+  if (fightRemaining <= 0) {
+    finishBattle(false);
+    battle.clearText = 'THE HOUR RAN OUT.';
+    return;
+  }
   // Enraged's own exit is now driven entirely by ERIF_ENRAGE_MINIGAME_PLAN
   // completing (see advanceEnrageSegment, called from updateEnraged) rather
   // than a flat duration — the full math/memory sequence runs well past the
