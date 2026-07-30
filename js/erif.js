@@ -862,7 +862,7 @@ function updateFinalConvergence(dt) {
     battle.finalVerdictRingTimer -= dt;
     if (battle.finalVerdictRingTimer <= 0) {
       battle.finalVerdictRingA += battle.convergenceOrbitDir * .35;
-      spawnRing(true, battle.finalVerdictRingA, 360, battle.convergenceOrbitDir * 1.0, 160, .45);
+      spawnRing(true, battle.finalVerdictRingA, 360, battle.convergenceOrbitDir * 1.0, 160, .45, 2);
       battle.finalVerdictRingTimer = 1.2;
     }
   }
@@ -1197,7 +1197,7 @@ function fireFingerShot(hand, x, y) {
       hand.globalWardCooldownT = GLOBAL_WARD_COOLDOWN;
       if (ward === 'oracle') { battle.inkTimer = 1.7; battle.inkSpawn = 0; }
       else if (ward === 'gale') { beginGaleGust(true); }
-      else { spawnRing(true, rand(0, Math.PI * 2), 300, choose([-1, 1]) * .9, 150, .42); }
+      else { spawnRing(true, rand(0, Math.PI * 2), 300, choose([-1, 1]) * .9, 150, .42, 2); }
     } else {
       spawnErifBounceBall(x, y, s.x, s.y);
     }

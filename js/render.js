@@ -1140,11 +1140,11 @@ function drawBattle() {
     const rot = Math.atan2(w.vy, w.vx) + w.wobble * w.spin * .3;
     ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(rot);
     ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
-    ctx.fillRect(-9, -12, 18, 24); ctx.strokeRect(-9, -12, 18, 24);
+    ctx.fillRect(-4.5, -6, 9, 12); ctx.strokeRect(-4.5, -6, 9, 12);
     ctx.globalAlpha = .7;
-    for (let px = -6; px <= 6; px += 4) line(px, -9, px, 9, .5);
+    for (let px = -3; px <= 3; px += 2) line(px, -4.5, px, 4.5, .5);
     ctx.globalAlpha = 1;
-    line(0, -12, 0, 12, 1.5); // spine
+    line(0, -6, 0, 6, 1.5); // spine
     ctx.restore();
   }
   for (const t of battle.trailSquares) {
@@ -1173,9 +1173,9 @@ function drawBattle() {
     ctx.fillStyle = EMBER; ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
     ctx.fillRect(-9, -12, 18, 24); ctx.strokeRect(-9, -12, 18, 24);
     ctx.globalAlpha = .7; ctx.strokeStyle = '#000';
-    for (let px = -6; px <= 6; px += 4) line(px, -9, px, 9, .5);
+    for (let px = -6; px <= 6; px += 4) line(px, -9, px, 9, 1);
     ctx.globalAlpha = 1;
-    line(0, -12, 0, 12, 1.5); // spine
+    line(0, -12, 0, 12, 3); // spine
     ctx.restore();
   }
   for (const p of [...battle.bullets, ...battle.aimedBullets]) {

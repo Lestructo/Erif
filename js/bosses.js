@@ -689,7 +689,7 @@ function spawnEchoBook(hard = false) {
   else { x = b.x - 16; y = rand(b.y, b.y + b.h); tx = b.x + b.w + 16; ty = rand(b.y, b.y + b.h); }
   const speed = (hard ? 68 : 52) * DIFFICULTY.projectileMult;
   const a = Math.atan2(ty - y, tx - x);
-  battle.echoBooks.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: 12, wobble: rand(0, Math.PI * 2), spin: rand(-3, 3), trailT: 0 });
+  battle.echoBooks.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: 6, wobble: rand(0, Math.PI * 2), spin: rand(-3, 3), trailT: 0 });
   tone(160, .12, 'sine', .02);
 }
 function updateEchoBooks(dt) {
@@ -752,7 +752,7 @@ function updateWeavingBooks(dt) {
     // dust, these actually linger and have to be dodged too.
     w.trailT -= dt;
     if (w.trailT <= 0) {
-      battle.trailSquares.push({ x: p.x, y: p.y, t: 1.8, size: 10, family: w.family });
+      battle.trailSquares.push({ x: p.x, y: p.y, t: 1.8, size: 10, harmless:true, family: w.family });
       w.trailT = .16;
     }
     if (dist(p.x, p.y, s.x, s.y) < s.r + w.r - 3) { w.dead = true; hurt(); }
@@ -764,7 +764,7 @@ function updateTrailSquares(dt) {
   const s = battle.soul;
   for (const t of battle.trailSquares) {
     t.t -= dt;
-    if (!t.dead && dist(t.x, t.y, s.x, s.y) < s.r + t.size * .75) { t.dead = true; hurt(); }
+    if (!t.dead && !t.harmless && dist(t.x, t.y, s.x, s.y) < s.r + t.size * .75) { t.dead = true; hurt(); }
   }
   battle.trailSquares = battle.trailSquares.filter(t => !t.dead && t.t > 0);
 }

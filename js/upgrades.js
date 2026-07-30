@@ -27,7 +27,7 @@ function confirmUpgradeChoice() {
   const key = upgradeChoiceOptions[upgradeChoiceIndex];
   if (!key) return;
   const cat = UPGRADE_CATALOG[key];
-  // HP is the only type that doesn't apply on the spot — it costs 2 picks
+  // HP is the only type that doesn't apply on the spot — it costs 4 picks
   // per realized stack, banked in hpProgress until it reaches costPerStack.
   if (key === 'hp') {
     save.hpProgress++;
@@ -61,7 +61,7 @@ function updateUpgradeChoice(dt) {
 // canonical base value everywhere (3 HP for any lieutenant, .75s i-frames).
 function formatUpgradeValue(key, stacks) {
   const cat = UPGRADE_CATALOG[key];
-  if (key === 'hp') return `${3 + stacks} HP`;
+  if (key === 'hp') return `${3 + cat.perStack * stacks} HP`;
   if (key === 'iframe') return `${(.75 + cat.perStack * stacks).toFixed(2)}s`;
   const amount = cat.perStack * stacks * (cat.unit === '%' ? 100 : 1);
   return `+${Math.round(amount)}${cat.unit}`;

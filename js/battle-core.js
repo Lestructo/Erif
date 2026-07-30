@@ -8,7 +8,7 @@ function makeBattle(type) {
   // lieutenant, 16 for Erif's own fight) — Erif has no depletable boss-health
   // bar of his own, so the Max HP upgrade raising this only ever makes the
   // player tankier, in every fight including Erif's, never Erif himself.
-  const hp = BOSS[type].hp + (save.upgrades.hp || 0);
+  const hp = BOSS[type].hp + (save.upgrades.hp || 0) * UPGRADE_CATALOG.hp.perStack;
   return {
     type,
     t: 0,

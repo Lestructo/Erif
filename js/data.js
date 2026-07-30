@@ -84,7 +84,7 @@ const BOSS = {
   // continues into the true final phase afterward, so this stays generous
   // enough to never fire mid-twist (battle-core.js's timeout check also
   // explicitly excludes phase 10 as a second line of defense).
-  erif:      { display: 'ERIF', ward: '', duration: 600, hp: 12, intro: 'Every ember you have claimed was mine to begin with. Let us see if you can keep it.' },
+  erif:      { display: 'ERIF', ward: '', duration: 600, hp: 15, intro: 'Every ember you have claimed was mine to begin with. Let us see if you can keep it.' },
 };
 
 const LIEUTENANTS = ['hourglass', 'mask', 'executioner', 'witness', 'archivist', 'oracle', 'verdict', 'gale'];
@@ -218,7 +218,7 @@ function freshSave() {
     // Perfect-clear upgrades — stack counts are the single source of truth;
     // every actual bonus is derived from these at the point of use (see
     // UPGRADE_CATALOG below), never stored redundantly. hpProgress is separate
-    // from upgrades.hp because HP costs 2 perfect clears per stack, not 1 —
+    // from upgrades.hp because HP costs 4 perfect clears per stack, not 1 —
     // it's the raw pick count banked toward hp's next stack.
     upgrades: { speed: 0, hp: 0, shield: 0, iframe: 0 },
     hpProgress: 0,
@@ -263,12 +263,12 @@ function resetSaveGame() {
 // bonus-application sites (js/hazards.js, js/battle-core.js, js/bosses.js)
 // both read from this rather than hardcoding the per-stack numbers in more
 // than one place. `perStack`/`cap` are the tunable knobs; `costPerStack` is
-// 2 for hp (see hpProgress) and 1 for everything else.
+// 4 for hp (see hpProgress) and 1 for everything else.
 const UPGRADE_CATALOG = {
   speed:  { name: 'MOVE SPEED',         perStack: .06, cap: 3, costPerStack: 1, unit: '%',  desc: 'Faster in every fight.' },
   shield: { name: 'SHIELD FORGIVENESS', perStack: 5,   cap: 3, costPerStack: 1, unit: 'px', desc: '' },
   iframe: { name: 'RESOLVE',            perStack: .2,  cap: 3, costPerStack: 1, unit: 's',  desc: 'Longer invulnerability after taking a hit.' },
-  hp:     { name: 'MAX HP',             perStack: 1,   cap: 3, costPerStack: 2, unit: '',   desc: 'One more hit to survive, everywhere — costs 2 perfect clears.' },
+  hp:     { name: 'MAX HP',             perStack: 3,   cap: 1, costPerStack: 4, unit: '',   desc: 'More health to survive, everywhere — costs 4 perfect clears.' },
 };
 
 const player = { x: W / 2, y: H / 2 + 125, r: 8, speed: 220 };
