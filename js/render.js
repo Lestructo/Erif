@@ -893,6 +893,20 @@ function drawErifBounceBall(ball) {
   ctx.strokeStyle = EMBER; ctx.lineWidth = 1.5; ctx.stroke();
 }
 
+// One of Erif's own eyes (see spawnErifEyeBall/updateErifEyeBalls, erif.js) —
+// same glow+ember-outline language as the bounce ball above, just bigger,
+// with a small dark pupil so it reads as an eye rather than a plain ball.
+function drawErifEyeBall(eye) {
+  ctx.save(); ctx.globalAlpha = .25; ctx.fillStyle = EMBER;
+  ctx.beginPath(); ctx.arc(eye.x, eye.y, eye.r * 1.6, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(eye.x, eye.y, eye.r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = EMBER; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(eye.x, eye.y, eye.r * .4, 0, Math.PI * 2); ctx.fill();
+}
+
 function drawBattle() {
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.strokeStyle = '#fff'; ctx.fillStyle = '#fff';
   const b = battle.box; drawFloorGrid(b.x, b.y, b.w, b.h);
@@ -1221,6 +1235,7 @@ function drawBattle() {
     ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
   }
   for (const ball of battle.erifBounceBalls) drawErifBounceBall(ball);
+  for (const eye of battle.erifEyeBalls) drawErifEyeBall(eye);
   for (const m of battle.marks) {
     const pct = clamp(m.t / .68, 0, 1);
     ctx.save(); ctx.globalAlpha = .45 + .5 * (1 - pct); ctx.lineWidth = 2;
@@ -1513,10 +1528,18 @@ function drawBattle() {
     // needs to actually read clearly at a glance, not just be legible.
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.strokeRect(685, uiY + 31, 40, 32);
     text(`${left}`, 705, uiY + 47, 27);
+  } else if (battle.type === 'erif' && battle.phase === PHASE_LAST_WAGER) {
+    // The Reckoning is the one Erif phase with a real, hard clock (see
+    // RECKONING_TIME_LIMIT, erif.js) — running it out is an actual loss, so
+    // unlike every other Erif phase this gets a real ticking number instead
+    // of '???'.
+    const left = Math.max(0, Math.ceil(RECKONING_TIME_LIMIT - (battle.t - battle.phaseStartT)));
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.strokeRect(685, uiY + 31, 40, 32);
+    text(`${left}`, 705, uiY + 47, 27);
   } else if (battle.type === 'erif') {
     // The box stays for layout consistency with every other fight — just
-    // with no real number in it, since (unlike the lieutenants) his fight
-    // was never actually won by outlasting a clock.
+    // with no real number in it, since (unlike the lieutenants and the
+    // Reckoning above) this fight was never won by outlasting a clock.
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.strokeRect(685, uiY + 31, 40, 32);
     text('???', 705, uiY + 47, 20);
   }

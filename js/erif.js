@@ -836,8 +836,8 @@ function startErifFinalConvergence() {
 // than a quick tap — 2s of hold, decaying at FINAL_CONVERGENCE_LEAVE_DECAY
 // (not snapping to 0) if the soul steps out, paired with the arena itself
 // slowly closing in (see updateFinalConvergence's finalShrinkTimer).
-const FINAL_CONVERGENCE_HOLD_TIME = 2;
-const FINAL_CONVERGENCE_LEAVE_DECAY = .25;
+const FINAL_CONVERGENCE_HOLD_TIME = 1.5;
+const FINAL_CONVERGENCE_LEAVE_DECAY = .5;
 function startFinalCommand() {
   battle.q = null; battle.lasers = []; battle.inkTimer = 0; battle.inkSpawn = 0;
   const remaining = remainingFinalFamilies();
@@ -1073,10 +1073,14 @@ const SLAM_TELEGRAPH_TIME = .55;
 const HAND_VULNERABLE_TIME = 2.0;
 const RETRACT_SPEED = 480, RETRACT_MIN_TIME = .35, RETRACT_MAX_TIME = 1.1;
 // Shared across both hands (battle.erifSlamLockoutT) — set the instant
-// either hand's slam actually impacts, so the other can't start its own
-// chase-and-slam again until this clears. Without it nothing stopped both
-// hands from occasionally converging on a slam at nearly the same moment.
-const SLAM_STAGGER_TIME = 2;
+// either hand COMMITS to a chase (not at impact), so the other can't start
+// its own chase-and-slam until this clears. Setting it this early, rather
+// than at impact, is what actually guarantees the gap: a hand's own
+// chase-to-impact wind-up (CHASE_MAX_TIME + SLAM_TELEGRAPH_TIME) happens
+// entirely inside this lockout window, so the earliest the other hand can
+// begin chasing is SLAM_STAGGER_TIME after this hand started — which puts
+// its own impact at least SLAM_STAGGER_TIME after this hand's impact too.
+const SLAM_STAGGER_TIME = 3;
 
 // Fingers — 1 thumb + 3 pointers, fanned around local "forward" (angle 0 =
 // hand.facing). Each independently charges (reach eases from reachMin to
@@ -1101,6 +1105,12 @@ const FINGER_STAGGER = [0, .6, 1.2, 1.8];
 const GLOBAL_WARD_COOLDOWN = 2.5;
 const BOUNCE_BALL_CHANCE = 0.225;
 const BOUNCE_BALL_SPEED = 210, BOUNCE_BALL_R = 6.5;
+// An "eye" pops out and joins the fight permanently each time a hand break
+// docks a point off Erif's head HP (see handleErifPunch) — up to 8 over the
+// fight, one per ward. Same wall-bounce physics as the bounce ball above,
+// just larger and slower, and — unlike the bounce ball — it never breaks on
+// a bounce, so the arena gets permanently more dangerous as the fight goes on.
+const EYE_BALL_SPEED = BOUNCE_BALL_SPEED * .5, EYE_BALL_R = BOUNCE_BALL_R * 1.5;
 
 // Erif's own rest/pull anchor — hands dock near this point, and the head's
 // own live position (battle.erifHeadX/Y) softly drifts toward a blend of
@@ -1244,6 +1254,30 @@ function updateErifBounceBalls(dt) {
   battle.erifBounceBalls = battle.erifBounceBalls.filter(b => !b.dead);
 }
 
+// One of Erif's own eyes, popped out at the moment a hand break docks a
+// point off his head HP — spawns from the head's live position in a random
+// direction and bounces off battle.box's edges forever (no break-after-2nd-
+// bounce like the regular bounce ball above), permanently escalating the
+// arena's danger as more wards fall.
+function spawnErifEyeBall() {
+  const a = rand(0, Math.PI * 2);
+  battle.erifEyeBalls.push({ x: battle.erifHeadX, y: battle.erifHeadY, vx: Math.cos(a) * EYE_BALL_SPEED, vy: Math.sin(a) * EYE_BALL_SPEED, r: EYE_BALL_R });
+  tone(220, .16, 'triangle', .035);
+}
+function updateErifEyeBalls(dt) {
+  const b = battle.box;
+  for (const eye of battle.erifEyeBalls) {
+    eye.x += eye.vx * dt; eye.y += eye.vy * dt;
+    let bounced = false;
+    if (eye.x - eye.r < b.x) { eye.x = b.x + eye.r; eye.vx = Math.abs(eye.vx); bounced = true; }
+    else if (eye.x + eye.r > b.x + b.w) { eye.x = b.x + b.w - eye.r; eye.vx = -Math.abs(eye.vx); bounced = true; }
+    if (eye.y - eye.r < b.y) { eye.y = b.y + eye.r; eye.vy = Math.abs(eye.vy); bounced = true; }
+    else if (eye.y + eye.r > b.y + b.h) { eye.y = b.y + b.h - eye.r; eye.vy = -Math.abs(eye.vy); bounced = true; }
+    if (bounced) { spawnSparks(eye.x, eye.y, 5, { color: '#fff', speed: [40, 90], life: .25 }); tone(260, .05, 'square', .018); }
+    if (convergenceCircleHit(eye, eye.r)) hurt();
+  }
+}
+
 // A finger's world position — hand.x/y offset along its local angle
 // (rotated by hand.facing) by its current charge reach. This IS the
 // projectile spawn point, so the "filling up" visual and the actual origin
@@ -1330,11 +1364,16 @@ function updateErifHand(hand, dt) {
     updateErifHandFingers(hand, dt);
     hand.globalWardCooldownT = Math.max(0, hand.globalWardCooldownT - dt);
     hand.slamCooldownT -= dt;
-    // Also gated on the shared slam lockout (battle.erifSlamLockoutT, set
-    // the instant either hand's slam actually impacts) — a hand whose own
-    // cooldown is ready just waits here, still wandering/firing normally,
-    // until the other hand's slam has had its own moment.
-    if (hand.slamCooldownT <= 0 && battle.erifSlamLockoutT <= 0) { hand.state = 'chasing'; hand.stateT = CHASE_MAX_TIME; }
+    // Also gated on the shared slam lockout (battle.erifSlamLockoutT) — a
+    // hand whose own cooldown is ready just waits here, still
+    // wandering/firing normally, until the other hand's own chase window has
+    // cleared. The lockout is (re-)armed the instant this hand commits below
+    // — see SLAM_STAGGER_TIME's comment for why that timing is what actually
+    // guarantees the gap between the two hands' impacts.
+    if (hand.slamCooldownT <= 0 && battle.erifSlamLockoutT <= 0) {
+      hand.state = 'chasing'; hand.stateT = CHASE_MAX_TIME;
+      battle.erifSlamLockoutT = SLAM_STAGGER_TIME;
+    }
   } else if (hand.state === 'chasing') {
     const s = battle.soul;
     steerHandToward(hand, { x: s.x, y: s.y }, CHASE_SPEED, CHASE_TURN_RATE, dt);
@@ -1359,11 +1398,6 @@ function updateErifHand(hand, dt) {
       kick(.06); tone(90, .18, 'sawtooth', .05);
       spawnSparks(hand.x, hand.y, 10, { color: EMBER, speed: [90, 220], life: .35 });
       hand.state = 'vulnerable'; hand.stateT = HAND_VULNERABLE_TIME;
-      // Locks the OTHER hand out of starting its own chase-and-slam for a
-      // couple seconds — without this both hands could occasionally slam at
-      // nearly the same moment, which is much harder to react to than
-      // either alone.
-      battle.erifSlamLockoutT = SLAM_STAGGER_TIME;
     }
   } else if (hand.state === 'vulnerable') {
     // Completely stationary for the whole window, hit or not — it doesn't
@@ -1426,6 +1460,7 @@ function handleErifPunch() {
     battle.erifHeadHitFlashT = .3; // a brief flash on the head itself, the only feedback this automatic damage gets
     tone(300 + battle.erifHeadHitsLanded * 22, .1, 'sine', .05);
     spawnSparks(battle.erifHeadX, battle.erifHeadY, 8, { color: '#fff', speed: [60, 160], life: .35 });
+    spawnErifEyeBall(); // one of Erif's own eyes pops out and joins the fight permanently, one per ward lost
     if (battle.erifHeadHp <= 0) {
       if (!battle.erifHandsLaughedAtFlurry) { battle.erifHandsLaughedAtFlurry = true; erifLaugh(); }
       beginErifTrueVictory();
@@ -1436,10 +1471,16 @@ function handleErifPunch() {
     // 'recharging' branches in updateErifHand.
     startHandTravel(target, { x: target.x, y: target.y }, handDockPos(target.id), RETRACT_SPEED, RETRACT_MIN_TIME, RETRACT_MAX_TIME);
     target.state = 'retreating'; target.ward = null;
+  } else {
+    // A non-breaking hit closes the window immediately instead of leaving it
+    // vulnerable for the rest of HAND_VULNERABLE_TIME — one slam, one hit,
+    // full stop. Without this the player could land both of a ward's hits
+    // inside the same window (wait out hitCooldownT, hit again) instead of
+    // earning the second hit off a whole new chase-and-slam.
+    target.state = 'wandering';
+    target.slamCooldownT = rand(SLAM_COOLDOWN[0], SLAM_COOLDOWN[1]);
+    pickWanderTarget(target);
   }
-  // A non-breaking hit intentionally leaves hand.state alone — it just
-  // loops back to telegraph/slam for its second hit, same as always, just
-  // now briefly un-hittable via hitCooldownT above.
 }
 
 // Ticks every hazard family a ward attack might have fired, unconditionally,
@@ -1457,6 +1498,7 @@ function updateErifHandHazards(dt) {
   updateGaleFlags(dt); updateWindLines(dt);
   updateWeavingBooks(dt); updateTrailSquares(dt);
   updateErifBounceBalls(dt);
+  updateErifEyeBalls(dt);
   if (battle.galeGustPhase === 'telegraph') {
     battle.galeGustTimer -= dt;
     if (battle.galeGustTimer <= 0) launchGaleGust(true);
@@ -1491,6 +1533,7 @@ function beginErifTrueFinal() {
   battle.erifSlamLockoutT = 0;
   battle.erifHandsLaughedAtFlurry = false;
   battle.erifBounceBalls = [];
+  battle.erifEyeBalls = [];
   battle.erifReckoningFadeT = 0;
   battle.punchFlashT = 0; battle.punchDir = 0;
   battle.boxGrowFrom = { ...battle.box };
@@ -1562,6 +1605,13 @@ function beginErifTrueVictory() {
 function updateErifTrueVictory(dt) {
   if (!battle) return;
   battle.trueVictoryT += dt;
+  // Fades the Reckoning theme out under the white-flash/shake beat instead of
+  // letting it play on at full volume through the whole cinematic — same
+  // musicFadeMult tie-in updateErifVictory uses for the normal ending, just
+  // timed to this phase's own shorter FADE_END (see drawErifTrueVictory,
+  // render.js): starts with the white-out at t>.95, silent well before the
+  // dialogue phase begins at t=5.
+  if (battle.trueVictoryT > .95) musicFadeMult = 1 - clamp((battle.trueVictoryT - .95) / 3.5, 0, 1);
   if (battle.trueVictoryT >= 5.0 && tap(' ')) {
     battle.trueVictoryDialogueIndex++;
     tone(150 + battle.trueVictoryDialogueIndex * 32, .045, 'triangle', .022);

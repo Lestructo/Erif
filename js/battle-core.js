@@ -239,6 +239,7 @@ function makeBattle(type) {
     erifSlamLockoutT: 0, // shared between both hands — blocks either from starting a new chase-and-slam until it clears
     erifHandsLaughedAtFlurry: false,
     erifBounceBalls: [], // universal wall-bouncing projectiles, any finger can fire one
+    erifEyeBalls: [], // permanent wall-bouncing "eyes" — one popped out per head-HP loss, never break, up to 8 by fight's end
     erifReckoningFadeT: 0, // 0-1 white-out progress for the final 5s of the hard time limit
     punchFlashT: 0, punchDir: 0, // the boxing-glove shield-punch visual
     trueVictoryStarted: false,
@@ -325,6 +326,7 @@ function clearHazards() {
   battle.convergenceDeck = []; battle.marks = []; battle.blasts = []; battle.aimedBullets = []; battle.aimedBulletTimer = .5;
   battle.inkTimer = 0; battle.inkSpawn = 0;
   battle.erifBounceBalls = [];
+  battle.erifEyeBalls = [];
   battle.enrageRingTimer = 0; battle.enrageVolleyTimer = 0; battle.enrageShardTimer = 0; battle.enrageQuestionTimer = 0;
   battle.enrageSegmentIndex = 0; battle.enrageSegmentProgress = 0;
   battle.boxGrowFrom = null; battle.boxGrowTo = null; battle.boxGrowT = 0;

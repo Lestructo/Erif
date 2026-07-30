@@ -117,11 +117,10 @@ function activateTitleItem(item) {
 }
 
 // Ambient atmosphere for the title screen — a slow drift of rising embers
-// (shared system, see spawnEmber/updateEmbers/drawEmbers in render.js) and a
-// very quiet, irregular ember-crackle tick so sitting on the menu doesn't
-// read as dead silent. Both timers live here rather than inside update()'s
-// generic dispatch since they're purely a title-screen flourish.
-let titleEmberTimer = 0, titleCrackleTimer = 2;
+// (shared system, see spawnEmber/updateEmbers/drawEmbers in render.js). Lives
+// here rather than inside update()'s generic dispatch since it's purely a
+// title-screen flourish.
+let titleEmberTimer = 0;
 function updateTitleAtmosphere(dt) {
   titleEmberTimer -= dt;
   if (titleEmberTimer <= 0) {
@@ -129,15 +128,6 @@ function updateTitleAtmosphere(dt) {
     titleEmberTimer = rand(.2, .4);
   }
   updateEmbers(dt);
-  titleCrackleTimer -= dt;
-  if (titleCrackleTimer <= 0) {
-    // Two variants — a short tick (quieter now, was .01) and a longer, lower
-    // "ember settling" one on a 1-in-3 chance — so idling doesn't always
-    // sound exactly the same.
-    if (Math.random() < 1 / 3) noiseHit(.42, .006, 1400, null, 'sfx');
-    else noiseHit(.16, .005, 2000, null, 'sfx');
-    titleCrackleTimer = rand(3, 7);
-  }
 }
 
 function updateTitle(dt) {

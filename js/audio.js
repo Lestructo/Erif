@@ -180,7 +180,16 @@ function ensureErifTheme() {
 let trueThemeAudio = null;
 function ensureTrueTheme() {
   if (!trueThemeAudio) {
-    try { trueThemeAudio = new Audio('assets/erif-true-theme.mp3'); trueThemeAudio.loop = true; trueThemeAudio.preload = 'auto'; }
+    try {
+      trueThemeAudio = new Audio('assets/erif-true-theme.mp3'); trueThemeAudio.loop = true; trueThemeAudio.preload = 'auto';
+      // Seeking a compressed MP3 mid-stream can stall for a moment while the
+      // browser locates/decodes that point — pre-seek here, way ahead of the
+      // actual fight, so the real setMusic('erifTrue') call (fired the instant
+      // the player presses space to start the Reckoning) doesn't eat that
+      // latency and can play() instantly instead of appearing to wait on the
+      // arena box's grow animation.
+      trueThemeAudio.addEventListener('loadedmetadata', () => { try { trueThemeAudio.currentTime = .75; } catch {} });
+    }
     catch { trueThemeAudio = { play: () => Promise.resolve(), pause() {}, volume: 0, currentTime: 0, paused: true }; }
   }
   return trueThemeAudio;
