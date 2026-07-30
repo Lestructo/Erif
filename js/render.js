@@ -763,7 +763,7 @@ function drawErifHand(hand) {
   const damaged = vulnerable && hand.hp < HAND_WARD_HP;
   const chasing = hand.state === 'chasing' || hand.state === 'slamTelegraph';
   const equipProgress = hand.state === 'equipping' ? 1 - clamp(hand.stateT / EQUIP_TIME, 0, 1) : 1;
-  const parked = hand.state === 'retreating';
+  const parked = hand.state === 'retreating' || hand.state === 'recharging';
   const alpha = parked ? .3 : lerp(.35, 1, equipProgress);
 
   // The slam's warning ring lives at the frozen impact point, not on the
@@ -817,6 +817,13 @@ function drawErifHand(hand) {
     ctx.save(); ctx.globalAlpha = .35; ctx.strokeStyle = EMBER; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(hand.x, hand.y, 27, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
+  } else if (hand.state === 'recharging') {
+    // A filling progress arc at the dock so "how much longer" reads at a
+    // glance instead of the hand just sitting there dim for 5 flat seconds.
+    const pct = 1 - clamp(hand.stateT / HAND_RECHARGE_TIME, 0, 1);
+    ctx.save(); ctx.globalAlpha = .55; ctx.strokeStyle = EMBER; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(hand.x, hand.y, 26, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2); ctx.stroke();
+    ctx.restore();
   }
 
   if (hand.ward) {
@@ -839,18 +846,20 @@ function drawErifHand(hand) {
 }
 
 // Erif's actual head — reuses the same drawBossIcon('erif', ...) portrait as
-// the header everywhere else, now always drawn fully opaque (ghost=false,
-// see the note below on why the old ghost dimming can't be used for a
-// partial alpha) at a much bigger scale so it reads as a real presence
-// throughout the fight rather than a faint background icon. A visible
-// 10(-ish)-pip HP row (unlike the player's own deliberately-hidden HP) and
-// a pulsing ember ring are the "the window is open" tell instead.
+// the header everywhere else, always drawn fully opaque (ghost=false, see
+// the note below on why the old ghost dimming can't be used for a partial
+// alpha) at a much bigger scale so it reads as a real presence throughout
+// the fight rather than a faint background icon. It's never a player
+// target anymore — HP only ever drops automatically when a hand breaks
+// (see handleErifPunch, erif.js) — so the only feedback it needs is a
+// brief white flash right on the moment of that automatic hit
+// (battle.erifHeadHitFlashT) plus its own visible HP pip row.
 function drawErifHeadHUD() {
-  const hx = battle.erifHeadX, hy = battle.erifHeadY, exposed = battle.erifHeadExposed;
-  if (exposed) {
-    const pulse = .45 + .35 * Math.abs(Math.sin(performance.now() / 180));
-    ctx.save(); ctx.globalAlpha = pulse; ctx.strokeStyle = EMBER; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(hx, hy, 80 * (ERIF_HEAD_SCALE / .5), 0, Math.PI * 2); ctx.stroke();
+  const hx = battle.erifHeadX, hy = battle.erifHeadY;
+  if (battle.erifHeadHitFlashT > 0) {
+    const p = clamp(battle.erifHeadHitFlashT / .3, 0, 1);
+    ctx.save(); ctx.globalAlpha = p; ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(hx, hy, (70 + (1 - p) * 20) * (ERIF_HEAD_SCALE / .5), 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
   }
   // drawBossIcon sets its own globalAlpha internally off the `ghost` flag
@@ -864,9 +873,9 @@ function drawErifHeadHUD() {
   const pipW = 13, gap = 3, total = battle.erifHeadMaxHp * (pipW + gap) - gap, startX = hx - total / 2, pipY = hy + 40 + 132 * ERIF_HEAD_SCALE;
   for (let i = 0; i < battle.erifHeadMaxHp; i++) {
     ctx.save();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = ctx.fillStyle = '#fff'; ctx.lineWidth = 1.5;
     ctx.strokeRect(startX + i * (pipW + gap), pipY, pipW, 12);
-    if (i < battle.erifHeadHp) { ctx.fillStyle = exposed ? EMBER : '#fff'; ctx.fillRect(startX + i * (pipW + gap) + 2, pipY + 2, pipW - 4, 8); }
+    if (i < battle.erifHeadHp) ctx.fillRect(startX + i * (pipW + gap) + 2, pipY + 2, pipW - 4, 8);
     ctx.restore();
   }
 }
@@ -1405,28 +1414,10 @@ function drawBattle() {
     // just overlay text on top of text.
     if (!battle.q && !battle.echoSequence.length) text('ALL EIGHT BRANDS ARE ACTIVE', W / 2, STATUS_Y, 15, 'center', .72);
   } else if (battle.type === 'erif' && battle.phase === PHASE_LAST_WAGER) {
-    // The Reckoning (Hard-only) — flashes a call-out the instant the head is
-    // attackable, permanent once every ward is gone; otherwise just the
-    // ward-break progress count.
-    const permanentlyOpen = battle.erifWardsDestroyed >= REPRISE_ORDER.length;
-    if (permanentlyOpen) {
-      text('NOTHING LEFT TO HIDE BEHIND', W / 2, STATUS_Y, 18, 'center', .95);
-    } else if (battle.erifHeadExposed) {
-      ctx.save(); ctx.globalAlpha = .6 + .4 * Math.abs(Math.sin(performance.now() / 90));
-      text('THE HEART IS OPEN', W / 2, STATUS_Y, 18, 'center', 1);
-      ctx.restore();
-    } else {
-      text(`${battle.erifWardsDestroyed}/${REPRISE_ORDER.length} WARDS BROKEN`, W / 2, STATUS_Y, 15, 'center', .72);
-    }
-    // A prominent, pulsing one-time callout for the phase's own attack
-    // button — counts down from beginErifTrueFinal and is cleared early on
-    // the player's first Space press (see updateErifHandsFinale, erif.js).
-    // Sits near the top of the arena, which this phase leaves otherwise
-    // empty (no header/boss-icon here) rather than competing with STATUS_Y.
-    if (battle.erifAttackHintT > 0) {
-      const hintAlpha = Math.min(1, battle.erifAttackHintT) * (.65 + .35 * Math.abs(Math.sin(performance.now() / 220)));
-      text('SPACE — ATTACK A VULNERABLE HAND', W / 2, battle.box.y + 70, 16, 'center', hintAlpha);
-    }
+    // The Reckoning (Hard-only) — Erif's own head is never a player target
+    // (see erif.js), so this is just the ward-break progress readout now,
+    // no exposed/open flashing state to track.
+    text(`${battle.erifWardsDestroyed}/${REPRISE_ORDER.length} WARDS BROKEN`, W / 2, STATUS_Y, 15, 'center', .72);
   }
 
   const mech = activeMechanic();
@@ -1655,15 +1646,16 @@ function drawDialogue() {
   else drawExplore();
 
   // The dialogue that plays right as Erif enters the Enraged phase (see
-  // main.js's update(), which plays this through automatically) AND the
-  // twist dialogue right before the Reckoning ("...NO.") both get a
-  // dedicated presentation — a box matching the arena frame itself (battle.
-  // box hasn't widened for Enraged's own version yet at this point — that
-  // only happens once beginErifEnraged runs, after this dialogue finishes),
-  // covering it completely instead of the small fixed bottom-strip box used
-  // everywhere else. The dialogue leading INTO the fight itself
-  // (after==='erif') stays that normal small kind — unchanged.
-  if (dialogue.after === 'erifEnraged' || dialogue.after === 'erifTrueFinal') {
+  // main.js's update(), which plays this through automatically), the twist
+  // dialogue right before the Reckoning ("...NO."), and the plain-language
+  // control reminder chained right after that twist all get a dedicated
+  // presentation — a box matching the arena frame itself (battle.box hasn't
+  // widened for Enraged's own version yet at this point — that only happens
+  // once beginErifEnraged runs, after this dialogue finishes), covering it
+  // completely instead of the small fixed bottom-strip box used everywhere
+  // else. The dialogue leading INTO the fight itself (after==='erif') stays
+  // that normal small kind — unchanged.
+  if (dialogue.after === 'erifEnraged' || dialogue.after === 'erifReckoningIntro' || dialogue.after === 'erifTrueFinal') {
     const b = battle.box, x = b.x, y = b.y, w = b.w, h = b.h;
     ctx.fillStyle = '#000'; ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#fff'; box(x, y, w, h, 4); ctx.fillStyle = '#fff';
     text(dialogue.speaker || 'ERIF', x + 20, y + 26, 16, 'left');
@@ -1691,12 +1683,13 @@ function drawDialogue() {
       ctx.restore();
       return;
     }
-    // erifTrueFinal (the twist, "...NO.") — same big arena-sized frame as
-    // Enraged's own dialogue above, but manual/player-advanced one line at a
-    // time (SPACE prompt + N/total counter) instead of an auto-playing
-    // accumulating transcript — this one isn't driven by main.js's
-    // erifEnraged auto-hold special-case, so it waits on the player exactly
-    // like the small dialogue box everywhere else does.
+    // erifReckoningIntro (the twist, "...NO.") and erifTrueFinal (the
+    // plain-language control reminder right after it) — same big
+    // arena-sized frame as Enraged's own dialogue above, but manual/
+    // player-advanced one line at a time (SPACE prompt + N/total counter)
+    // instead of an auto-playing accumulating transcript — neither is
+    // driven by main.js's erifEnraged auto-hold special-case, so both wait
+    // on the player exactly like the small dialogue box everywhere else does.
     const textX = x + 20, textW = w - 40;
     const fullLine = dialogue.lines[dialogue.index];
     const fullWrapped = wrapLines(fullLine, textW, 20);
@@ -1795,20 +1788,34 @@ function drawEnding() {
 // untouched (and provably regression-free) by this addition.
 function drawErifTrueVictory() {
   const t = battle?.trueVictoryT || 0;
-  if (t < 5.0) {
+  // Same fade-to-white + escalating shake treatment as drawErifVictory
+  // above, timed proportionally onto this screen's own shorter 5s pre-
+  // dialogue window (was a much smaller fixed 10px shake and no white fade
+  // at all — stayed black straight into the dialogue phase).
+  const FADE_END = 5.0;
+  if (t < FADE_END) {
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.strokeStyle = '#fff'; ctx.fillStyle = '#fff';
-    const shake = clamp(t / 1.5, 0, 1);
-    const sx = Math.sin(t * 61) * 10 * shake, sy = Math.cos(t * 53) * 10 * shake * .6;
+    const intensity = 4 + Math.pow(clamp(t / 2.2, 0, 1), 2) * 28;
+    const sx = Math.sin(t * 61) * intensity, sy = Math.cos(t * 53) * intensity * .6;
     drawBossIcon('erif', W / 2 + sx, H / 2 - 25 + sy, false);
     ctx.fillStyle = t > 1.5 ? EMBER : '#fff';
     text('THERE WAS NO EMBER LEFT TO HIDE BEHIND.', W / 2, 535, 16, 'center', clamp((t - .5) / 1.2, 0, 1));
+    ctx.fillStyle = '#fff';
+    if (t > .95) {
+      const p = clamp((t - .95) / (FADE_END - .95), 0, 1), radius = 20 + p * 760;
+      ctx.fillStyle = '#fff'; ctx.globalAlpha = p; ctx.beginPath(); ctx.arc(W / 2, H / 2 - 20, radius, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    }
   } else {
-    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.strokeStyle = '#fff'; ctx.fillStyle = '#fff';
+    lightScreenActive = true;
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = '#000'; ctx.strokeStyle = '#000';
     const idx = Math.min(battle.trueVictoryDialogueIndex, ERIF_TRUE_FINAL_DIALOGUE.length - 1);
-    const fadeCover = clamp(idx * .18, 0, .82);
-    drawBossIcon('erif', W / 2, 175, true);
-    ctx.fillStyle = `rgba(0,0,0,${fadeCover})`; ctx.fillRect(W / 2 - 145, 55, 290, 245);
-    ctx.fillStyle = '#fff'; ctx.strokeStyle = '#fff';
+    // drawBossIcon always strokes in white, so — same fix as
+    // drawErifVictory's own dialogue phase — it needs an opaque dark
+    // backdrop drawn BEFORE it to stay visible now that the page itself is
+    // white, not the reverse order this had when the page was still black.
+    ctx.fillStyle = 'rgba(0,0,0,.85)'; ctx.fillRect(W / 2 - 145, 55, 290, 245);
+    drawBossIcon('erif', W / 2, 175, idx >= 2);
+    ctx.fillStyle = '#000'; ctx.strokeStyle = '#000';
     text('You let the last ember go out.', W / 2, 330, 25, 'center', .85);
     const x = 82, y = 408, w = 796, h = 140;
     ctx.fillStyle = '#000'; ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#fff'; box(x, y, w, h, 4); ctx.fillStyle = '#fff';

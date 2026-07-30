@@ -76,6 +76,7 @@ function advanceDialogue() {
   // fallback, mode was left stuck on 'dialogue' with dialogue now null,
   // which crashed drawDialogue() on the next frame and froze the game.
   else if (after === 'introDone') { if (!startErifDialogue(0)) mode = 'explore'; }
+  else if (after === 'erifReckoningIntro') startErifReckoningIntro();
   else if (after === 'erifTrueFinal') beginErifTrueFinal();
   else mode = 'explore';
 }
@@ -1007,45 +1008,60 @@ function updateErifVictory(dt) {
 // ---- Hard-only: the fake-out twist and "The Reckoning" (phase 10) ----
 function startErifTwist() {
   if (!battle) return;
-  dialogue = { lines: ERIF_TWIST_DIALOGUE, index: 0, after: 'erifTrueFinal', context: 'battle' };
+  dialogue = { lines: ERIF_TWIST_DIALOGUE, index: 0, after: 'erifReckoningIntro', context: 'battle' };
   mode = 'erifTwist';
   tone(45, .4, 'sawtooth', .06);
 }
+// A short, plainly-worded control reminder chained in right after the twist
+// dialogue and right before the fight itself actually starts (see
+// advanceDialogue's after==='erifReckoningIntro' branch and this dialogue's
+// own after==='erifTrueFinal') — same big arena-sized manual dialogue box,
+// just attributed to a neutral label instead of Erif's own voice so it
+// reads as a genuine tutorial beat, not more taunting.
+function startErifReckoningIntro() {
+  if (!battle) return;
+  dialogue = { lines: ERIF_RECKONING_INTRO_DIALOGUE, index: 0, after: 'erifTrueFinal', context: 'battle', speaker: 'THE RECKONING' };
+  mode = 'erifTwist';
+  tone(220, .12, 'sine', .03);
+}
 
-// ---- "The Reckoning": a two-hands Kirby-style boss fight, fought in waves
-// of 2. Each wave, both hands wear one ward apiece, wander the arena firing
-// their ward's attack from their own fingertips, and periodically break off
-// to chase the player and slam down — that slam is the ONLY window to
-// actually damage a hand. Once BOTH of a wave's hands are broken (2 hits
-// each), they vanish for good and a real window opens to land a hit on
-// Erif's own head — land one and the wave is confirmed, the next 2 (new,
-// random) wards come out; let the window run out without landing a hit and
-// the same 2 wards regenerate, hands and all, no progress lost but none
-// gained either. 4 waves clears all 8 wards, after which the head stays
-// permanently exposed to finish off (unchanged end state, straight into the
-// existing beginErifTrueVictory/true-ending flow). A hard 100s clock
-// white-fades the whole fight out if it runs long. ----
+// ---- "The Reckoning": a two-hands Kirby-style boss fight. Each hand wears
+// one of the 8 lieutenant wards, wanders the arena firing that ward's
+// attack from its own fingertips, and periodically breaks off to chase the
+// player and slam down — that slam is the ONLY window to actually damage a
+// hand. Breaking a hand (2 hits) is the ENTIRE win condition now: Erif's
+// own head HP drops by 1 automatically the instant a hand breaks — there is
+// no separate player-driven head attack anymore. A broken hand retreats,
+// recharges for a few seconds, then comes back wearing a new random ward
+// and resumes on its own; each hand's cycle runs fully independently of the
+// other. Erif's head HP equals the ward count (8), so the fight ends the
+// instant the 8th hand ever breaks, straight into the existing
+// beginErifTrueVictory/true-ending flow. A hard 100s clock white-fades the
+// whole fight out if it runs long. ----
 // h trimmed from 580 — unlike Enraged/Final Convergence, this phase keeps
 // the HP row/timer/controls legend on-screen (see hideBottomUI, main.js) on
 // purpose, so the bottom edge is raised enough to leave that whole strip
 // real room below the arena instead of pushing it off-canvas.
 const ERIF_HANDS_BOX = { x: 25, y: 30, w: 910, h: 490 };
 const ERIF_HANDS_BOX_GROW_TIME = 1.4;
-const HAND_WARD_HP = 2, ERIF_HEAD_HP = 6;
-const HAND_HIT_RANGE = 100, HEAD_HIT_RANGE = 170;
-const HEAD_HIT_COOLDOWN = .35;
-// Up from a single-hit-window's old 2.2s — this is now a real "get some
-// time to hit the boss" window per the wave design, not a snap reaction
-// check, since letting it expire has a real cost (the wave's 2 wards
-// regenerate) rather than just quietly closing.
-const HEAD_WINDOW_TIME = 4.5;
+const HAND_WARD_HP = 2, ERIF_HEAD_HP = REPRISE_ORDER.length; // one point of head HP per ward, so the 8th break ends it exactly
+const HAND_HIT_RANGE = 100;
+// A brief per-hand invulnerability right after any hit lands — without it,
+// two Space presses landed close enough together (a fast player, or just
+// luck) could land both of a ward's 2 hits back to back, breaking it
+// "instantly" with no real read on the second hit at all.
+const HAND_HIT_COOLDOWN = .4;
+// How long a broken hand sits fully out of play before it's eligible to
+// come back with a new ward — the actual re-equip still queues behind
+// EQUIP_TIME/EMERGE_* below on top of this, same as it always has.
+const HAND_RECHARGE_TIME = 5;
 const ERIF_HEAD_SCALE = .85; // read by render.js's drawErifHeadHUD too
 const RECKONING_TIME_LIMIT = 100, RECKONING_FADE_WINDOW = 5;
 
-// Hand movement AI — wander/chase/slam/flee/retract. Numbers are tuned
-// (tighter than a looser first pass) so realistic, non-perfect play clears
-// all 8 wards with real buffer under the 100s hard cap rather than right up
-// against it — see RECKONING_TIME_LIMIT above.
+// Hand movement AI — wander/chase/slam/retreat/recharge. Numbers are tuned
+// so realistic, non-perfect play clears all 8 wards with real buffer under
+// the 100s hard cap rather than right up against it — see
+// RECKONING_TIME_LIMIT above.
 const HAND_DOCK_OFFSET = 110; // either side of Erif's own anchor point
 const EQUIP_TIME = .35;
 const EMERGE_SPEED = 380, EMERGE_MIN_TIME = .4, EMERGE_MAX_TIME = .9;
@@ -1056,6 +1072,11 @@ const CHASE_SPEED = 260, CHASE_TURN_RATE = 3.0, CHASE_MAX_TIME = 1.1, SLAM_ENGAG
 const SLAM_TELEGRAPH_TIME = .55;
 const HAND_VULNERABLE_TIME = 2.0;
 const RETRACT_SPEED = 480, RETRACT_MIN_TIME = .35, RETRACT_MAX_TIME = 1.1;
+// Shared across both hands (battle.erifSlamLockoutT) — set the instant
+// either hand's slam actually impacts, so the other can't start its own
+// chase-and-slam again until this clears. Without it nothing stopped both
+// hands from occasionally converging on a slam at nearly the same moment.
+const SLAM_STAGGER_TIME = 2;
 
 // Fingers — 1 thumb + 3 pointers, fanned around local "forward" (angle 0 =
 // hand.facing). Each independently charges (reach eases from reachMin to
@@ -1067,8 +1088,10 @@ const HAND_FINGERS = [
   { angle: 0, thumb: false, reachMin: 30, reachMax: 50 },
   { angle: 0.32, thumb: false, reachMin: 28, reachMax: 46 },
 ];
-const FINGER_CHARGE_TIME = 1.8;
-const FINGER_STAGGER = [0, .45, .9, 1.35]; // initial offsets so all 4 don't fire in lockstep
+// Charge time up 1.8 -> 2.4 (a flat 25% slower firing rate) and stagger
+// scaled up to match, keeping the same 0/25/50/75%-of-charge offsets.
+const FINGER_CHARGE_TIME = 2.4;
+const FINGER_STAGGER = [0, .6, 1.2, 1.8];
 // oracle/gale/verdict fire a single global effect regardless of which
 // finger triggers them (confirmed in spawnConvergenceCueHazard — none of
 // the three actually vary with target position), so they're throttled
@@ -1076,8 +1099,8 @@ const FINGER_STAGGER = [0, .45, .9, 1.35]; // initial offsets so all 4 don't fir
 // the same effect; a finger that rolls one of these on cooldown fires a
 // bounce ball instead, so no charge is ever wasted.
 const GLOBAL_WARD_COOLDOWN = 2.5;
-const BOUNCE_BALL_CHANCE = 0.225; // spawn 25% less often (was .3)
-const BOUNCE_BALL_SPEED = 210, BOUNCE_BALL_R = 6.5; // radius reduced by 50% (was 13)
+const BOUNCE_BALL_CHANCE = 0.225;
+const BOUNCE_BALL_SPEED = 210, BOUNCE_BALL_R = 6.5;
 
 // Erif's own rest/pull anchor — hands dock near this point, and the head's
 // own live position (battle.erifHeadX/Y) softly drifts toward a blend of
@@ -1133,18 +1156,20 @@ function steerHandToward(hand, target, speed, turnRate, dt) {
 }
 
 // A bare hand shell — actually wearing a ward and joining the fight happens
-// in beginHandBout below, called (via beginErifWave) once real wave-start
-// logic is ready to run. 'gone' is the same do-nothing terminal state a
-// hand ends up in permanently once it's broken and its wave has nothing
-// left to hand it — starting there is just a safe placeholder for the
-// single frame before beginErifTrueFinal's own beginErifWave() call
-// overwrites it.
+// in beginHandBout below. 'gone' is the same do-nothing terminal state a
+// hand ends up in permanently if it's ever broken with nothing left in the
+// ward pool to hand it (defensive only — with ERIF_HEAD_HP equal to the
+// ward count, the fight ends on the 8th break before this can normally
+// happen at all) — starting there is just a safe placeholder for the
+// single frame before beginErifTrueFinal's own beginHandBout() calls
+// overwrite it.
 function makeErifHand(id) {
   const dock = handDockPos(id);
   return {
     id, x: dock.x, y: dock.y, facing: 0,
     ward: null, hp: 0,
     state: 'gone', stateT: 0,
+    hitCooldownT: 0, // brief per-hand invulnerability right after any hit lands
     wanderTarget: { x: dock.x, y: dock.y }, wanderRepickT: 0,
     slamCooldownT: 0,
     slamTargetX: 0, slamTargetY: 0, // frozen at telegraph-start so the slam itself is dodgeable
@@ -1155,12 +1180,14 @@ function makeErifHand(id) {
 }
 // Resets a hand in place to start a fresh bout wearing `ward` — the one
 // place a hand actually gets assigned a ward, reused for the very first
-// wave, every subsequent new wave, and a failed window's ward regen alike.
+// bout and every recharge-cycle re-equip alike. Each hand calls this fully
+// independently of the other now — there's no pairing/wave bookkeeping.
 function beginHandBout(hand, ward) {
   const dock = handDockPos(hand.id);
   hand.x = dock.x; hand.y = dock.y; hand.facing = 0;
   hand.ward = ward; hand.hp = HAND_WARD_HP;
   hand.state = 'equipping'; hand.stateT = EQUIP_TIME;
+  hand.hitCooldownT = 0;
   hand.wanderTarget = { x: dock.x, y: dock.y }; hand.wanderRepickT = 0;
   hand.slamCooldownT = 0;
   hand.slamTargetX = 0; hand.slamTargetY = 0;
@@ -1168,16 +1195,6 @@ function beginHandBout(hand, ward) {
   hand.travelFrom = null; hand.travelTo = null; hand.travelT = 0; hand.travelDur = 0;
   hand.fingers = HAND_FINGERS.map((cfg, i) => ({ chargeT: FINGER_STAGGER[i], reach: cfg.reachMin }));
   tone(CONVERGENCE_CUE_TONE[ward], .12, 'triangle', .04); // same per-family identifying cue every other ward-reload moment uses
-}
-// Starts a new wave: pops 2 fresh wards off the pool, or — on a failed
-// window's regen — reuses the exact same 2 names via `reuseWards` instead
-// of touching the pool at all, so a regen genuinely costs nothing but time.
-function beginErifWave(reuseWards = null) {
-  const wards = reuseWards || [battle.erifWardPool.pop(), battle.erifWardPool.pop()];
-  battle.erifWaveWards = wards;
-  battle.erifWaveHandsBroken = 0;
-  beginHandBout(battle.erifHands[0], wards[0]);
-  beginHandBout(battle.erifHands[1], wards[1]);
 }
 
 // A 5-note sawtooth phrase — three short descending "ha" notes, one louder
@@ -1275,20 +1292,22 @@ function updateErifHandFingers(hand, dt) {
 
 // The hand state machine:
 // equipping -> emerging -> wandering <-> (chasing -> slamTelegraph ->
-// vulnerable) -> retreating -> gone.
+// vulnerable) -> retreating -> recharging -> equipping | gone.
 // Vulnerability is gated entirely behind landing a slam — wandering hands
-// (charging/firing fingers) can't be damaged at all. 'gone' is terminal for
-// the hand itself — a new bout (same 2 wards on a regen, or 2 fresh ones on
-// a confirmed wave) resets BOTH hands back to 'equipping' together via
-// beginErifWave, not this per-hand state machine.
+// (charging/firing fingers) can't be damaged at all. Breaking a hand (see
+// handleErifPunch) automatically docks a point off Erif's own head HP —
+// there's no separate player-driven head attack anymore — then the hand
+// runs its own retreat/recharge/re-equip cycle fully independently of the
+// other hand.
 function updateErifHand(hand, dt) {
-  if (hand.state === 'equipping' || hand.state === 'gone') {
+  if (hand.state === 'equipping' || hand.state === 'gone' || hand.state === 'recharging') {
     // Parked states stay formula-driven off the live box/anchor (like the
     // old fixed-position hands did) rather than a stale snapshot, so they
     // never drift out of sync if the box is still animating.
     const dock = handDockPos(hand.id);
     hand.x = dock.x; hand.y = dock.y;
   }
+  hand.hitCooldownT = Math.max(0, hand.hitCooldownT - dt);
   hand.stateT -= dt;
   if (hand.state === 'equipping') {
     if (hand.stateT <= 0) {
@@ -1311,7 +1330,11 @@ function updateErifHand(hand, dt) {
     updateErifHandFingers(hand, dt);
     hand.globalWardCooldownT = Math.max(0, hand.globalWardCooldownT - dt);
     hand.slamCooldownT -= dt;
-    if (hand.slamCooldownT <= 0) { hand.state = 'chasing'; hand.stateT = CHASE_MAX_TIME; }
+    // Also gated on the shared slam lockout (battle.erifSlamLockoutT, set
+    // the instant either hand's slam actually impacts) — a hand whose own
+    // cooldown is ready just waits here, still wandering/firing normally,
+    // until the other hand's slam has had its own moment.
+    if (hand.slamCooldownT <= 0 && battle.erifSlamLockoutT <= 0) { hand.state = 'chasing'; hand.stateT = CHASE_MAX_TIME; }
   } else if (hand.state === 'chasing') {
     const s = battle.soul;
     steerHandToward(hand, { x: s.x, y: s.y }, CHASE_SPEED, CHASE_TURN_RATE, dt);
@@ -1327,16 +1350,20 @@ function updateErifHand(hand, dt) {
     hand.y = lerp(hand.y, hand.slamTargetY, Math.min(1, dt * 3));
     if (hand.stateT <= 0) {
       hand.x = hand.slamTargetX; hand.y = hand.slamTargetY;
-      // The slam impact — an expanding, gap-less shockwave ring (see
-      // spawnRing's new origin/expand params, hazards.js) is what actually
-      // opens the vulnerable window. HP is untouched here.
-      // Slam impact: make the expanding shockwave 50% slower and
-      // alternate gaps so it's an even "empty >> line >> empty >> line"
-      // pattern (two opposite safe gaps). Opening tuned to allow dodge.
-      spawnRing(true, 0, 18, 0, 170, 0.8, 2, { x: hand.x, y: hand.y }, true);
+      // The slam impact — an expanding shockwave ring (see spawnRing's
+      // origin/expand params, hazards.js) is what actually opens the
+      // vulnerable window. HP is untouched here. Dashed with gaps all the
+      // way around (10 openings) rather than 2 big ones, and 25% slower, so
+      // it reads as a real dodgeable ring instead of a near-solid wall.
+      spawnRing(true, 0, 18, 0, 127.5, 0.16, 10, { x: hand.x, y: hand.y }, true);
       kick(.06); tone(90, .18, 'sawtooth', .05);
       spawnSparks(hand.x, hand.y, 10, { color: EMBER, speed: [90, 220], life: .35 });
       hand.state = 'vulnerable'; hand.stateT = HAND_VULNERABLE_TIME;
+      // Locks the OTHER hand out of starting its own chase-and-slam for a
+      // couple seconds — without this both hands could occasionally slam at
+      // nearly the same moment, which is much harder to react to than
+      // either alone.
+      battle.erifSlamLockoutT = SLAM_STAGGER_TIME;
     }
   } else if (hand.state === 'vulnerable') {
     // Completely stationary for the whole window, hit or not — it doesn't
@@ -1349,89 +1376,70 @@ function updateErifHand(hand, dt) {
       pickWanderTarget(hand);
     }
   } else if (hand.state === 'retreating') {
-    // A broken hand is gone for the rest of this wave (or the whole fight,
-    // if this was the last one) — this is purely the visual travel back
-    // toward Erif for a clean exit, not a reload. Whether/when it comes
-    // back at all is decided at the wave level (see beginErifWave, called
-    // from handleErifPunch once both of a wave's hands are down and the
-    // resulting window is either won or times out).
-    if (updateHandTravel(hand, dt)) hand.state = 'gone';
+    // Purely the visual travel back toward Erif for a clean exit after
+    // breaking — the actual "how long until it can act again" cooldown is
+    // the 'recharging' state below, entered once this arrives.
+    if (updateHandTravel(hand, dt)) { hand.state = 'recharging'; hand.stateT = HAND_RECHARGE_TIME; }
+  } else if (hand.state === 'recharging') {
+    if (hand.stateT <= 0) {
+      // Draws a fresh ward and rejoins on its own — fully independent of
+      // whatever the other hand is doing. Defensive fallback to 'gone' if
+      // the pool's ever actually empty (shouldn't happen in practice, since
+      // ERIF_HEAD_HP equals the ward count and the fight ends on the 8th
+      // break, before an 9th recharge could ever complete).
+      if (battle.erifWardPool.length) beginHandBout(hand, battle.erifWardPool.pop());
+      else hand.state = 'gone';
+    }
   }
   // 'gone' has nothing further to do this frame beyond the position pin above.
 }
 
 // Space bar: the player's dedicated attack, usable only within range of a
-// currently-vulnerable hand (nearest one wins if both qualify) or, failing
-// that, the exposed head. Always pops the boxing-glove punch feedback (see
-// battle.punchFlashT/punchDir, now read by render.js's SHIELD drawing, not
-// the flame) whether or not it actually lands.
+// currently-vulnerable hand (nearest one wins if both qualify) that isn't
+// still on its own post-hit cooldown. There's no head target anymore —
+// Erif's head takes damage automatically the instant a hand breaks (see
+// below). Always pops the boxing-glove punch feedback (see
+// battle.punchFlashT/punchDir, read by render.js's SHIELD drawing, not the
+// flame) whether or not it actually lands.
 function handleErifPunch() {
-  battle.erifAttackHintT = 0; // the on-screen callout has done its job the instant Space is used at all
   const s = battle.soul;
   let target = null, nearestD = Infinity;
   for (const hand of battle.erifHands) {
-    if (hand.state !== 'vulnerable') continue;
+    if (hand.state !== 'vulnerable' || hand.hitCooldownT > 0) continue;
     const d = dist(s.x, s.y, hand.x, hand.y);
     if (d <= HAND_HIT_RANGE && d < nearestD) { target = hand; nearestD = d; }
-  }
-  if (!target && battle.erifHeadExposed && battle.erifHeadHitCooldown <= 0) {
-    if (dist(s.x, s.y, battle.erifHeadX, battle.erifHeadY) <= HEAD_HIT_RANGE) target = { isHead: true, x: battle.erifHeadX, y: battle.erifHeadY };
   }
 
   battle.punchDir = target ? Math.atan2(target.y - s.y, target.x - s.x) : (s.vx || s.vy ? Math.atan2(s.vy, s.vx) : battle.punchDir);
   battle.punchFlashT = .18;
   if (!target) { tone(90, .05, 'square', .015); return; }
 
-  if (target.isHead) {
-    battle.erifHeadHp--; battle.erifHeadHitsLanded++; battle.erifHeadHitCooldown = HEAD_HIT_COOLDOWN;
-    tone(300 + battle.erifHeadHitsLanded * 22, .09, 'sine', .05);
-    spawnSparks(target.x, target.y, 6, { color: '#fff', speed: [60, 140], life: .3 });
-    // Landing a hit during an active per-wave window (not the permanent,
-    // post-8th-wave exposure — that one just keeps taking hits with no wave
-    // bookkeeping left to do) confirms this wave: its 2 wards are now
-    // permanently destroyed, and the next 2 (fresh, random) come out
-    // immediately — "after you deal damage, the boss brings out 2 more
-    // hands." If the pool's empty, this WAS the last wave; there's nothing
-    // left to bring out, and permanentlyOpen (updateErifHandsFinale) takes
-    // over on its own next frame.
-    const permanentlyOpen = battle.erifWardsDestroyed >= REPRISE_ORDER.length;
-    if (!permanentlyOpen && battle.erifHeadWindowT > 0 && !battle.erifHeadWindowHitUsed) {
-      battle.erifHeadWindowHitUsed = true; battle.erifHeadWindowT = 0;
-      battle.erifWardsDestroyed += battle.erifWaveWards.length;
-      tone(620, .22, 'sine', .05);
-      if (battle.erifWardsDestroyed >= REPRISE_ORDER.length && !battle.erifHandsLaughedAtFlurry) {
-        battle.erifHandsLaughedAtFlurry = true;
-        erifLaugh();
-      } else if (battle.erifWardPool.length >= 2) {
-        beginErifWave();
-      }
+  target.hp--;
+  target.hitCooldownT = HAND_HIT_COOLDOWN; // can't be hit again for a beat, even on the same still-vulnerable hand
+  tone(440, .08, 'square', .04);
+  spawnSparks(target.x, target.y, 6, { color: EMBER, speed: [70, 150], life: .3 });
+  if (target.hp <= 0) {
+    kick(.05); tone(160, .18, 'sawtooth', .05); noiseHit(.08, .03, 1400);
+    // Breaking a hand automatically docks a point off Erif's own head HP —
+    // there's no separate player-driven head attack to land anymore.
+    battle.erifHeadHp--; battle.erifHeadHitsLanded++; battle.erifWardsDestroyed++;
+    battle.erifHeadHitFlashT = .3; // a brief flash on the head itself, the only feedback this automatic damage gets
+    tone(300 + battle.erifHeadHitsLanded * 22, .1, 'sine', .05);
+    spawnSparks(battle.erifHeadX, battle.erifHeadY, 8, { color: '#fff', speed: [60, 160], life: .35 });
+    if (battle.erifHeadHp <= 0) {
+      if (!battle.erifHandsLaughedAtFlurry) { battle.erifHandsLaughedAtFlurry = true; erifLaugh(); }
+      beginErifTrueVictory();
+      return;
     }
-    if (battle.erifHeadHp <= 0) { beginErifTrueVictory(); return; }
-  } else {
-    target.hp--;
-    tone(440, .08, 'square', .04);
-    spawnSparks(target.x, target.y, 6, { color: EMBER, speed: [70, 150], life: .3 });
-    if (target.hp <= 0) {
-      kick(.05); tone(160, .18, 'sawtooth', .05); noiseHit(.08, .03, 1400);
-      // Gone for good the instant it breaks — no more per-hand retract-and-
-      // reload. A short travel back toward Erif for a clean visual exit,
-      // then it just waits (invisible — see 'gone', updateErifHand) for
-      // this wave to actually resolve one way or the other.
-      startHandTravel(target, { x: target.x, y: target.y }, handDockPos(target.id), RETRACT_SPEED, RETRACT_MIN_TIME, RETRACT_MAX_TIME);
-      target.state = 'retreating'; target.ward = null;
-      battle.erifWaveHandsBroken++;
-      if (battle.erifWaveHandsBroken >= battle.erifHands.length) {
-        // Both of this wave's hands are down — a real window to hit Erif
-        // opens. Letting it run out regenerates these same 2 wards (see the
-        // timeout check in updateErifHandsFinale) instead of just quietly
-        // closing, so there's a real cost to not following up.
-        battle.erifHeadWindowT = HEAD_WINDOW_TIME; battle.erifHeadWindowHitUsed = false;
-        tone(520, .16, 'sine', .045);
-      }
-    }
-    // A non-breaking hit intentionally leaves hand.state alone — it just
-    // loops back to telegraph/slam for its second hit, same as always.
+    // Retreats, recharges for HAND_RECHARGE_TIME, then re-equips a new
+    // random ward and rejoins on its own — see the 'retreating'/
+    // 'recharging' branches in updateErifHand.
+    startHandTravel(target, { x: target.x, y: target.y }, handDockPos(target.id), RETRACT_SPEED, RETRACT_MIN_TIME, RETRACT_MAX_TIME);
+    target.state = 'retreating'; target.ward = null;
   }
+  // A non-breaking hit intentionally leaves hand.state alone — it just
+  // loops back to telegraph/slam for its second hit, same as always, just
+  // now briefly un-hittable via hitCooldownT above.
 }
 
 // Ticks every hazard family a ward attack might have fired, unconditionally,
@@ -1479,13 +1487,11 @@ function beginErifTrueFinal() {
   battle.erifWardsDestroyed = 0;
   battle.erifHeadHp = ERIF_HEAD_HP; battle.erifHeadMaxHp = ERIF_HEAD_HP;
   battle.erifHeadHitsLanded = 0;
-  battle.erifHeadWindowT = 0; battle.erifHeadWindowHitUsed = false;
-  battle.erifHeadExposed = false;
-  battle.erifHeadHitCooldown = 0;
+  battle.erifHeadHitFlashT = 0;
+  battle.erifSlamLockoutT = 0;
   battle.erifHandsLaughedAtFlurry = false;
   battle.erifBounceBalls = [];
   battle.erifReckoningFadeT = 0;
-  battle.erifAttackHintT = 6; // a prominent one-time "SPACE — ATTACK" callout, cleared early on first use
   battle.punchFlashT = 0; battle.punchDir = 0;
   battle.boxGrowFrom = { ...battle.box };
   battle.boxGrowTo = { ...ERIF_HANDS_BOX };
@@ -1494,7 +1500,9 @@ function beginErifTrueFinal() {
   battle.soul.vx = 0; battle.soul.vy = 0;
   const home = erifHomeAnchor();
   battle.erifHeadX = home.x; battle.erifHeadY = home.y;
-  beginErifWave(); // pops the first wave's 2 wards and equips both hands
+  // Each hand starts its own bout independently — no pairing/wave bookkeeping.
+  beginHandBout(battle.erifHands[0], battle.erifWardPool.pop());
+  beginHandBout(battle.erifHands[1], battle.erifWardPool.pop());
   mode = 'battle';
   setMusic('erifTrue');
   erifLaugh();
@@ -1509,26 +1517,10 @@ function updateErifHandsFinale(dt) {
   }
   moveSoulWithShield(dt, 210);
   battle.punchFlashT = Math.max(0, battle.punchFlashT - dt);
-  battle.erifHeadHitCooldown = Math.max(0, battle.erifHeadHitCooldown - dt);
+  battle.erifHeadHitFlashT = Math.max(0, battle.erifHeadHitFlashT - dt);
+  battle.erifSlamLockoutT = Math.max(0, battle.erifSlamLockoutT - dt);
 
   for (const hand of battle.erifHands) updateErifHand(hand, dt);
-
-  battle.erifAttackHintT = Math.max(0, battle.erifAttackHintT - dt);
-
-  // Head vulnerability: exposed for as long as the current wave's window is
-  // open (both its hands are down and no hit has landed yet), permanently
-  // open once all 8 wards are confirmed destroyed (unchanged end state).
-  // Catches the exact frame a window closes UNUSED — since that's a real
-  // regen, not just a quiet miss — and regenerates the same 2 wards rather
-  // than losing them (see beginErifWave's reuseWards).
-  const windowWasOpen = battle.erifHeadWindowT > 0;
-  battle.erifHeadWindowT = Math.max(0, battle.erifHeadWindowT - dt);
-  const permanentlyOpen = battle.erifWardsDestroyed >= REPRISE_ORDER.length;
-  if (windowWasOpen && battle.erifHeadWindowT <= 0 && !battle.erifHeadWindowHitUsed && !permanentlyOpen) {
-    tone(70, .3, 'sawtooth', .05);
-    beginErifWave(battle.erifWaveWards);
-  }
-  battle.erifHeadExposed = permanentlyOpen || (battle.erifHeadWindowT > 0 && !battle.erifHeadWindowHitUsed);
 
   // Loose head/hand coupling: the head softly drifts toward a blend of its
   // home anchor and the centroid of currently-active (non-gone/equipping)

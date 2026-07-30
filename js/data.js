@@ -187,6 +187,16 @@ const ERIF_TWIST_DIALOGUE = [
   'YOU THOUGHT AN UNYIELDING FLAME HAD ONLY ONE EMBER LEFT TO LOSE?',
   'SIT BACK DOWN. THIS IS THE ONLY FIRE THAT EVER MATTERED.',
 ];
+// A plain-language control/mechanic reminder, not Erif's own voice — plays
+// right after the twist above and right before the Reckoning itself
+// actually starts (see startErifReckoningIntro/beginErifTrueFinal, erif.js).
+// Deliberately unambiguous: this is the one fight in the game the player
+// can actually deal damage in, and it's easy to get this far and still not
+// realize the head itself is never a valid target.
+const ERIF_RECKONING_INTRO_DIALOGUE = [
+  "ATTACK THE HANDS. ERIF'S HEAD CAN'T BE STRUCK DIRECTLY — ONLY A BROKEN HAND HURTS HIM.",
+  'SPACE ATTACKS A HAND WHILE IT GLOWS, RIGHT AFTER IT SLAMS DOWN.',
+];
 // Plays after The Last Wager (phase 10) is actually won.
 const ERIF_TRUE_FINAL_DIALOGUE = [
   '...HUH.',
