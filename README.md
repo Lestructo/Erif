@@ -4,7 +4,7 @@ A small HTML5 Canvas boss-rush game. You play a guttering flame working through 
 
 No build step, no dependencies — it's plain HTML/CSS/JS.
 
-**Play it here:** _(add your GitHub Pages link once it's enabled — see below)_
+**Play it here:** https://lestructo.github.io/Erif/ _(live once GitHub Pages is enabled — see below)_
 
 ## Playing locally
 
