@@ -730,7 +730,7 @@ function spawnWeavingBook(hard = false, family = null) {
   const speed = (hard ? 78 : 62) * DIFFICULTY.projectileMult;
   const dirA = Math.atan2(ty - oy, tx - ox);
   battle.weavingBooks.push({
-    ox, oy, dirA, speed, travel: 0, r: 11,
+    ox, oy, dirA, speed, travel: 0, r: 5.5,
     wavePhase: rand(0, Math.PI * 2), waveAmp: rand(26, 40),
     spin: rand(-3, 3), rot: 0, trailT: 0, family,
   });
