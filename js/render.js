@@ -744,19 +744,26 @@ const STATUS_Y = 224;
 
 // The Reckoning (Hard-only true final phase, see erif.js) — a forearm +
 // palm + 4 fingers (1 thumb, 3 pointers, see HAND_FINGERS), oriented along
-// hand.facing. State-driven look: dim/formula-parked while equipping/
-// retracting/docked, normal while wandering/emerging (fingers visibly
-// charging — a small ember tip glows in once a finger is past 70% charged,
-// the same fingertip a shot actually fires from), a faint ember "hunting"
-// ring while chasing/telegraphing a slam, a solid fist + pulsing ember ring
-// (tinted ember instead of white once it's fled after taking a hit) while
-// actually vulnerable.
+// hand.facing. State-driven look: not drawn at all once 'gone' (broken for
+// the rest of this wave, or the whole fight — it's meant to actually
+// disappear), dim/fading out while retreating there, dim/fading in while
+// equipping, normal while wandering/emerging (fingers visibly charging — a
+// small ember tip glows in once a finger is past 70% charged, the same
+// fingertip a shot actually fires from), a faint ember "hunting" ring while
+// chasing/telegraphing a slam, a solid fist + pulsing ember ring (tinted
+// ember instead of white once it's already taken one hit) while actually
+// vulnerable.
 function drawErifHand(hand) {
+  if (hand.state === 'gone') return;
   const vulnerable = hand.state === 'vulnerable';
-  const fleeing = vulnerable && hand.hp < HAND_WARD_HP;
+  // "damaged" (was "fleeing") — the hand used to actually run once it'd
+  // taken one hit, but it now holds completely still for the whole window
+  // regardless; this is just an ember tint marking "already hurt, one more
+  // hit breaks it."
+  const damaged = vulnerable && hand.hp < HAND_WARD_HP;
   const chasing = hand.state === 'chasing' || hand.state === 'slamTelegraph';
   const equipProgress = hand.state === 'equipping' ? 1 - clamp(hand.stateT / EQUIP_TIME, 0, 1) : 1;
-  const parked = hand.state === 'docked' || hand.state === 'retracting';
+  const parked = hand.state === 'retreating';
   const alpha = parked ? .3 : lerp(.35, 1, equipProgress);
 
   // The slam's warning ring lives at the frozen impact point, not on the
@@ -775,15 +782,20 @@ function drawErifHand(hand) {
   ctx.save();
   ctx.translate(hand.x, hand.y); ctx.rotate(hand.facing);
   ctx.globalAlpha = alpha;
-  ctx.strokeStyle = fleeing ? EMBER : '#fff';
+  ctx.strokeStyle = damaged ? EMBER : '#fff';
   ctx.lineWidth = 2;
   line(-8, 0, -34, 0, 6); // forearm, trailing behind facing
 
   for (let i = 0; i < HAND_FINGERS.length; i++) {
     const cfg = HAND_FINGERS[i], f = hand.fingers[i];
+    // A small knuckle gap instead of starting every finger line at the
+    // literal center — 4 lines converging exactly where the ward letter
+    // renders was cluttering it. Purely cosmetic: fingerTipPos (erif.js)
+    // computes the actual firing origin the same way regardless.
+    const kx = Math.cos(cfg.angle) * 9, ky = Math.sin(cfg.angle) * 9;
     const fx = Math.cos(cfg.angle) * f.reach, fy = Math.sin(cfg.angle) * f.reach;
-    ctx.strokeStyle = fleeing ? EMBER : '#fff';
-    line(0, 0, fx, fy, cfg.thumb ? 5 : 4);
+    ctx.strokeStyle = damaged ? EMBER : '#fff';
+    line(kx, ky, fx, fy, cfg.thumb ? 5 : 4);
     const chargePct = clamp(f.chargeT / FINGER_CHARGE_TIME, 0, 1);
     if (hand.state === 'wandering' && chargePct > .7) {
       ctx.save(); ctx.globalAlpha = alpha * (chargePct - .7) / .3; ctx.fillStyle = EMBER;
@@ -792,7 +804,7 @@ function drawErifHand(hand) {
     }
   }
   ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); // palm
-  if (vulnerable) { ctx.fillStyle = fleeing ? EMBER : '#fff'; ctx.fill(); }
+  if (vulnerable) { ctx.fillStyle = damaged ? EMBER : '#fff'; ctx.fill(); }
   ctx.stroke();
   ctx.restore();
 
@@ -808,6 +820,12 @@ function drawErifHand(hand) {
   }
 
   if (hand.ward) {
+    // text() never sets its own fillStyle — without an explicit one here it
+    // was inheriting whatever was last set, which reads as plain white most
+    // of the time. When the palm is filled solid white (vulnerable, not
+    // damaged) that silently rendered the letter white-on-white and made it
+    // unreadable exactly when identifying the ward matters most.
+    ctx.fillStyle = (vulnerable && !damaged) ? '#000' : '#fff';
     text(hand.ward[0].toUpperCase(), hand.x, hand.y + 1, 16, 'center', alpha * (vulnerable ? .85 : 1));
     const pipW = 12, gap = 3, total = HAND_WARD_HP * (pipW + gap) - gap, startX = hand.x - total / 2;
     for (let i = 0; i < HAND_WARD_HP; i++) {
@@ -1400,6 +1418,15 @@ function drawBattle() {
     } else {
       text(`${battle.erifWardsDestroyed}/${REPRISE_ORDER.length} WARDS BROKEN`, W / 2, STATUS_Y, 15, 'center', .72);
     }
+    // A prominent, pulsing one-time callout for the phase's own attack
+    // button — counts down from beginErifTrueFinal and is cleared early on
+    // the player's first Space press (see updateErifHandsFinale, erif.js).
+    // Sits near the top of the arena, which this phase leaves otherwise
+    // empty (no header/boss-icon here) rather than competing with STATUS_Y.
+    if (battle.erifAttackHintT > 0) {
+      const hintAlpha = Math.min(1, battle.erifAttackHintT) * (.65 + .35 * Math.abs(Math.sin(performance.now() / 220)));
+      text('SPACE — ATTACK A VULNERABLE HAND', W / 2, battle.box.y + 70, 16, 'center', hintAlpha);
+    }
   }
 
   const mech = activeMechanic();
@@ -1430,19 +1457,16 @@ function drawBattle() {
     const turnProgress = clamp((t - shieldChangeT) / SHIELD_TURN_TIME, 0, 1);
     const turnEased = 1 - Math.pow(1 - turnProgress, 3);
     const renderAngle = angleLerp(shieldAngleFrom, shieldAngleTo, turnEased);
-    // The Reckoning's boxing-glove punch feedback (see battle.punchFlashT/
-    // punchDir, set by handleErifPunch, erif.js) now lives on the shield,
-    // not the flame — the shield throws the punch. Snapping the drawn angle
-    // to punchDir for the flash's duration is enough to make the existing
-    // local "bulges toward local -y" geometry pop toward the punch target,
-    // since the whole local frame below is already rotated by whatever
-    // angle is drawn here. shieldAngleFrom/To/ChangeT/LastDir (the real
-    // block-direction state) are never touched by this, so rendering falls
-    // back cleanly the instant the flash ends — no pop-back artifact.
+    // The Reckoning's boxing-glove punch feedback (see battle.punchFlashT,
+    // set by handleErifPunch, erif.js) lives on the shield, not the flame —
+    // it pops/grows in place along whatever direction the shield is already
+    // facing (renderAngle), rather than reorienting the shield toward the
+    // punch target — a punch should match your current guard, not spin it
+    // toward whatever you're hitting. shieldAngleFrom/To/ChangeT/LastDir
+    // (the real block-direction state) are untouched either way.
     const punchP = battle.punchFlashT > 0 ? clamp(battle.punchFlashT / .18, 0, 1) : 0;
-    const drawAngle = punchP > 0 ? battle.punchDir : renderAngle;
     const punchScale = 1 + .35 * punchP;
-    ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(drawAngle); ctx.scale(punchScale, punchScale);
+    ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(renderAngle); ctx.scale(punchScale, punchScale);
     ctx.globalAlpha = pulse; ctx.strokeStyle = color; ctx.lineWidth = 2;
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.beginPath();
@@ -1631,40 +1655,56 @@ function drawDialogue() {
   else drawExplore();
 
   // The dialogue that plays right as Erif enters the Enraged phase (see
-  // main.js's update(), which plays this through automatically) gets a
+  // main.js's update(), which plays this through automatically) AND the
+  // twist dialogue right before the Reckoning ("...NO.") both get a
   // dedicated presentation — a box matching the arena frame itself (battle.
-  // box hasn't widened yet at this point — that only happens once
-  // beginErifEnraged runs, after this dialogue finishes), covering it
-  // completely, dumping the entire exchange as one growing transcript
-  // (every prior line fully shown, plus the current one still typing)
-  // rather than replacing each line as the next one starts. The dialogue
-  // leading INTO the fight itself (after==='erif') stays the normal small
-  // bottom-strip, player-advanced kind — unchanged.
-  if (dialogue.after === 'erifEnraged') {
+  // box hasn't widened for Enraged's own version yet at this point — that
+  // only happens once beginErifEnraged runs, after this dialogue finishes),
+  // covering it completely instead of the small fixed bottom-strip box used
+  // everywhere else. The dialogue leading INTO the fight itself
+  // (after==='erif') stays that normal small kind — unchanged.
+  if (dialogue.after === 'erifEnraged' || dialogue.after === 'erifTrueFinal') {
     const b = battle.box, x = b.x, y = b.y, w = b.w, h = b.h;
     ctx.fillStyle = '#000'; ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#fff'; box(x, y, w, h, 4); ctx.fillStyle = '#fff';
     text(dialogue.speaker || 'ERIF', x + 20, y + 26, 16, 'left');
-    const textX = x + 20, textTop = y + 46, textBottom = y + h - 12, textW = w - 40;
-    // Every revealed line's wrapped rows, built up front so the total
-    // height is known — small enough font that the whole transcript should
-    // fit without scrolling in practice, but this still scrolls to keep the
-    // newest (currently-typing) content in view if it ever doesn't.
-    const lineHeight = 15, paraGap = 6;
-    const paragraphs = [];
-    for (let i = 0; i <= dialogue.index; i++) {
-      const full = dialogue.lines[i];
-      const shown = i === dialogue.index ? full.slice(0, Math.floor(dialogue.revealCount || 0)) : full;
-      paragraphs.push(wrapLines(shown, textW, 11));
+    if (dialogue.after === 'erifEnraged') {
+      const textX = x + 20, textTop = y + 46, textBottom = y + h - 12, textW = w - 40;
+      // Every revealed line's wrapped rows, built up front so the total
+      // height is known — small enough font that the whole transcript should
+      // fit without scrolling in practice, but this still scrolls to keep the
+      // newest (currently-typing) content in view if it ever doesn't.
+      const lineHeight = 15, paraGap = 6;
+      const paragraphs = [];
+      for (let i = 0; i <= dialogue.index; i++) {
+        const full = dialogue.lines[i];
+        const shown = i === dialogue.index ? full.slice(0, Math.floor(dialogue.revealCount || 0)) : full;
+        paragraphs.push(wrapLines(shown, textW, 11));
+      }
+      const totalH = paragraphs.reduce((sum, p) => sum + p.length * lineHeight, 0) + (paragraphs.length - 1) * paraGap;
+      const areaH = textBottom - textTop;
+      let cy = textTop + Math.min(0, areaH - totalH);
+      // Clipped to the whole box, not just the text sub-region — text() anchors
+      // each line at its vertical CENTER, so clipping tightly to textTop cut
+      // the top half of the very first line off instead of leaving it alone.
+      ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+      paragraphs.forEach(p => { p.forEach(ln => { text(ln, textX, cy, 11, 'left'); cy += lineHeight; }); cy += paraGap; });
+      ctx.restore();
+      return;
     }
-    const totalH = paragraphs.reduce((sum, p) => sum + p.length * lineHeight, 0) + (paragraphs.length - 1) * paraGap;
-    const areaH = textBottom - textTop;
-    let cy = textTop + Math.min(0, areaH - totalH);
-    // Clipped to the whole box, not just the text sub-region — text() anchors
-    // each line at its vertical CENTER, so clipping tightly to textTop cut
-    // the top half of the very first line off instead of leaving it alone.
-    ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
-    paragraphs.forEach(p => { p.forEach(ln => { text(ln, textX, cy, 11, 'left'); cy += lineHeight; }); cy += paraGap; });
-    ctx.restore();
+    // erifTrueFinal (the twist, "...NO.") — same big arena-sized frame as
+    // Enraged's own dialogue above, but manual/player-advanced one line at a
+    // time (SPACE prompt + N/total counter) instead of an auto-playing
+    // accumulating transcript — this one isn't driven by main.js's
+    // erifEnraged auto-hold special-case, so it waits on the player exactly
+    // like the small dialogue box everywhere else does.
+    const textX = x + 20, textW = w - 40;
+    const fullLine = dialogue.lines[dialogue.index];
+    const fullWrapped = wrapLines(fullLine, textW, 20);
+    const shownWrapped = wrapLines(fullLine.slice(0, Math.floor(dialogue.revealCount || 0)), textW, 20);
+    const lineHeight = 27, startY = y + h / 2 - (fullWrapped.length - 1) * (lineHeight / 2);
+    shownWrapped.forEach((ln, i) => text(ln, textX, startY + i * lineHeight, 20, 'left'));
+    text(`${dialogue.index + 1}/${dialogue.lines.length}`, x + w - 20, y + 26, 12, 'right', .55);
+    text('SPACE', x + w - 20, y + h - 22, 14, 'right', .72 + Math.sin(performance.now() / 170) * .25);
     return;
   }
 
@@ -1897,6 +1937,11 @@ function drawControlsLegend() {
   // white-on-white during the ending/victory-flash screens.
   ctx.save(); ctx.fillStyle = lightScreenActive ? '#000' : '#fff';
   text('WASD — MOVE     ARROWS/IJKL — SHIELD', x, y1, 10.5, 'left', .55);
-  text('SPACE — CONFIRM     R — RESTART TRIAL     ESC — PAUSE', x, y2, 10.5, 'left', .55);
+  // The Reckoning repurposes Space as a real attack button (see
+  // handleErifPunch, erif.js) instead of its usual confirm/advance role —
+  // the legend swaps its label to match, now that this phase actually keeps
+  // the legend on-screen (see hideBottomUI, main.js).
+  const spaceLabel = (battle && battle.type === 'erif' && battle.phase === PHASE_LAST_WAGER) ? 'SPACE — ATTACK' : 'SPACE — CONFIRM';
+  text(`${spaceLabel}     R — RESTART TRIAL     ESC — PAUSE`, x, y2, 10.5, 'left', .55);
   ctx.restore();
 }

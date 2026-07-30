@@ -107,12 +107,19 @@ function draw() {
   else if (drawMode === 'dialogue' || drawMode === 'erifTwist') drawDialogue();
   else if (drawMode === 'battle') {
     // A very short, small-amplitude shake on taking a hit (battle.hitShakeT,
-    // set in hurt(), battle-core.js) — wraps only the arena draw call so the
-    // controls legend/volume meters/pause overlay drawn below stay put.
-    if (battle && battle.hitShakeT > 0) {
-      const p = battle.hitShakeT / .12;
+    // set in hurt(), battle-core.js), plus a second source that ramps in
+    // right alongside the Reckoning's hard-timeout white-out
+    // (battle.erifReckoningFadeT, 0-1 over its last 5s — see
+    // updateErifHandsFinale, erif.js) so the screen visibly rattles apart
+    // as it fades, not just goes quietly white. Both wrap only the arena
+    // draw call so the controls legend/volume meters/pause overlay drawn
+    // below stay put.
+    const hitShake = battle ? (battle.hitShakeT / .12) * 4 : 0;
+    const fadeShake = battle ? battle.erifReckoningFadeT * 9 : 0;
+    const shakeMag = hitShake + fadeShake;
+    if (shakeMag > 0) {
       ctx.save();
-      ctx.translate((Math.random() * 2 - 1) * 4 * p, (Math.random() * 2 - 1) * 4 * p);
+      ctx.translate((Math.random() * 2 - 1) * shakeMag, (Math.random() * 2 - 1) * shakeMag);
       drawBattle();
       ctx.restore();
     } else drawBattle();
@@ -126,10 +133,14 @@ function draw() {
   else drawBoot();
   if (mode === 'paused') drawPauseOverlay();
   // Once Erif's box has grown for the "can't see your HP" gimmick (Enraged
-  // and beyond), the always-on legend/meters strip at the bottom is hidden
-  // too — leaving it up would give away a fixed reference point right where
-  // the arena floor now extends to, defeating the disorientation.
-  const hideBottomUI = drawMode === 'battle' && battle && battle.type === 'erif' && battle.phase >= PHASE_ENRAGED;
+  // and Final Convergence), the always-on legend/meters strip at the bottom
+  // is hidden too — leaving it up would give away a fixed reference point
+  // right where the arena floor now extends to, defeating the
+  // disorientation. The Reckoning (PHASE_LAST_WAGER) is deliberately
+  // excluded from this — its own arena box is shorter specifically so HP
+  // and the controls legend (now including the Space-to-attack hint) stay
+  // on-screen, since this phase is a real fight the player needs both for.
+  const hideBottomUI = drawMode === 'battle' && battle && battle.type === 'erif' && battle.phase >= PHASE_ENRAGED && battle.phase !== PHASE_LAST_WAGER;
   if (!hideBottomUI) { drawControlsLegend(); drawVolumeMeters(); }
   if (fade > 0) { ctx.fillStyle = '#fff'; ctx.globalAlpha = fade; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
 }

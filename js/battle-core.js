@@ -230,18 +230,21 @@ function makeBattle(type) {
     // travel state) is fully described in makeErifHand, erif.js.
     erifHandsStarted: false,
     erifHands: [],
-    erifWardPool: [], // shuffled remaining ward names, popped as hands reload
-    erifWardsDestroyed: 0, // 0-8
+    erifWardPool: [], // shuffled remaining ward names, 2 popped per wave (see beginErifWave)
+    erifWaveWards: [], // the 2 ward names active in the current wave — regenned verbatim on a failed window
+    erifWaveHandsBroken: 0, // 0-2, how many of the current wave's hands are down
+    erifWardsDestroyed: 0, // 0-8, confirmed/permanent only — advances by 2 on a successful window, never on a raw hand break
     erifHeadHp: 0, erifHeadMaxHp: 0,
     erifHeadHitsLanded: 0, // drives the climbing-pitch head-hit tone
     erifHeadX: 0, erifHeadY: 0, // the head's own live, loosely hand-following position
-    erifHeadWindowT: 0, // counts down the brief post-hand-break 1-hit window
+    erifHeadWindowT: 0, // counts down the current wave's window to land a hit before its 2 wards regenerate
     erifHeadWindowHitUsed: false, // closes the window immediately once used, even with time left
     erifHeadExposed: false, // recomputed every frame from erifHeadWindowT/erifWardsDestroyed, not manually toggled
     erifHeadHitCooldown: 0,
     erifHandsLaughedAtFlurry: false,
     erifBounceBalls: [], // universal wall-bouncing projectiles, any finger can fire one
     erifReckoningFadeT: 0, // 0-1 white-out progress for the final 5s of the hard time limit
+    erifAttackHintT: 0, // counts down a prominent "SPACE — ATTACK" hint, cleared early on first use
     punchFlashT: 0, punchDir: 0, // the boxing-glove shield-punch visual
     trueVictoryStarted: false,
     trueVictoryT: 0,

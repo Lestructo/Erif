@@ -211,7 +211,10 @@ function setMusic(name) {
     musicFadeMult = 1;
     try {
       const a = ensureTrueTheme();
-      a.volume = musicVolume * .20; a.currentTime = 0;
+      // Same .75s-in start as ensureErifTheme's track above, for the same
+      // reason — this is also a mastered MP3 that opens with a stretch of
+      // near-silence, which read as playback lag starting at 0.
+      a.volume = musicVolume * .20; a.currentTime = .75;
       a.play().catch(() => {});
     } catch {}
   }

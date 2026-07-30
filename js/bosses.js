@@ -424,10 +424,20 @@ function updateExecutioner(dt, hard = false) {
   battle.specialTimer -= dt;
   if (battle.spawn <= 0) {
     const first = choose(['up', 'down', 'left', 'right']);
-    spawnSpearVolley(hard, first);
+    // Spaced barrages (find-the-gap, no shield read needed) are now the
+    // common case for this base cadence too, not just the special layer
+    // below — a full solid wall was firing on literally every cycle before,
+    // which is what actually read as "overwhelmed by full rows," regardless
+    // of how gap-biased triggerSpearSpecial already was. Decided once and
+    // applied to both the first wall and (on hard) the second, so a cycle
+    // reads as one consistent barrage instead of an odd solid+gapped mix.
+    const useGapped = Math.random() < .65;
+    if (useGapped) spawnSpearGappedWall(hard, choose([5, 7]), first);
+    else spawnSpearVolley(hard, first);
     if (hard && Math.random() < .42) {
       const next = choose(['up', 'down', 'left', 'right'].filter(x => x !== first));
-      spawnSpearVolley(hard, next, .58);
+      if (useGapped) spawnSpearGappedWall(hard, choose([5, 7]), next, .58);
+      else spawnSpearVolley(hard, next, .58);
     }
     // Widened from 1.85/2.3 — the full-wall volley (and the tightly-packed
     // needle burst below) were crowding out the spaced 3/5/7 gapped patterns
@@ -578,21 +588,24 @@ const ARCHIVIST_WIN_ROUNDS = 5;
 // this many seconds from the moment it starts (reveal included) — without
 // it a round that's never actually finished (see failEchoRound below) could
 // otherwise sit open forever. Running out counts exactly like a wrong touch:
-// it fails the round and costs a hit.
-const MEMORY_MATCH_ROUND_TIME = 12;
+// it fails the round and costs a hit. Back down to 10 (was bumped to 12
+// earlier) — the shorter starting sequence below means it isn't needed.
+const MEMORY_MATCH_ROUND_TIME = 10;
 
 // lengthOverride lets a caller pin the exact sequence length instead of
 // deriving it from battle.echoRound — used by Erif's Reprise segment (see
 // updateRepriseArchivist, erif.js), which runs its own fixed 4-then-6 pair
 // rather than the standalone trial's ever-climbing progression.
 function startEchoRound(hard = false, lengthOverride = null) {
-  const pool = hard ? ECHO_SYMBOLS : ECHO_SYMBOLS.slice(0, 4);
+  // Always the full 5-symbol set now, matching Erif's own Reprise segment
+  // (which always runs startEchoRound with hard=true regardless of the
+  // actual difficulty tier) — one more option than Normal used to get here.
+  const pool = ECHO_SYMBOLS;
   layoutSigils(pool, 0, battle.box.w * .36, battle.box.h * .30);
   const names = battle.sigils.map(s => s.name);
-  // Capped one round lower than before at both tiers — the trial escalates
-  // through fewer steps before topping out, since the continuous book hazard
-  // now adds its own pressure on top of the sequence itself.
-  const length = lengthOverride ?? Math.min((hard ? 4 : 3) + battle.echoRound - 1, hard ? 8 : 6);
+  // Normal's starting length dropped 3 -> 2 (hard's stays at 4) — a little
+  // easier of an on-ramp before the same round-5 cap (6) as before.
+  const length = lengthOverride ?? Math.min((hard ? 4 : 2) + battle.echoRound - 1, hard ? 8 : 6);
   battle.echoSequence = Array.from({ length }, () => choose(names));
   battle.echoStep = 0;
   battle.echoPhase = 'reveal';

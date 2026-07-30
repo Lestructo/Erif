@@ -50,6 +50,15 @@ function advanceSkipToErifUpgrades() {
 }
 function skipToErif() {
   applyDifficultyTier(selectedDifficulty);
+  // Only queue upgrade offers for lieutenants that genuinely weren't
+  // perfected yet BEFORE this skip — `perfected` means "the perfect-clear
+  // reward has already been claimed" everywhere else in the game, and
+  // Skip to Erif needs to respect that same rule. Without this, using Skip
+  // to Erif more than once on the same save (the normal way to repeatedly
+  // test the late-game content) re-queued all 8 lieutenants every time,
+  // handing out fresh upgrade picks for ones already claimed and letting
+  // stacks silently climb well past what real play could ever earn.
+  const newlyPerfected = LIEUTENANTS.filter(n => !save.perfected[n]);
   // Marks every lieutenant ward AND perfected so the hub/portal still reads
   // consistently if the player ever backs out of the fight — Erif's own
   // approach/intro logic otherwise assumes all 8 have already been beaten,
@@ -58,7 +67,7 @@ function skipToErif() {
   room = 'center';
   resetPlayerForRoom(null);
   mode = 'explore';
-  skipToErifQueue = [...LIEUTENANTS];
+  skipToErifQueue = newlyPerfected;
   advanceSkipToErifUpgrades();
 }
 
