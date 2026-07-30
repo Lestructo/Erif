@@ -1060,8 +1060,8 @@ const FINGER_STAGGER = [0, .45, .9, 1.35]; // initial offsets so all 4 don't fir
 // the same effect; a finger that rolls one of these on cooldown fires a
 // bounce ball instead, so no charge is ever wasted.
 const GLOBAL_WARD_COOLDOWN = 2.5;
-const BOUNCE_BALL_CHANCE = .3; // extra chance an origin-sensitive finger ALSO fires a ball
-const BOUNCE_BALL_SPEED = 210, BOUNCE_BALL_R = 13;
+const BOUNCE_BALL_CHANCE = 0.225; // spawn 25% less often (was .3)
+const BOUNCE_BALL_SPEED = 210, BOUNCE_BALL_R = 6.5; // radius reduced by 50% (was 13)
 
 // Erif's own rest/pull anchor — hands dock near this point, and the head's
 // own live position (battle.erifHeadX/Y) softly drifts toward a blend of
@@ -1278,7 +1278,10 @@ function updateErifHand(hand, dt) {
       // The slam impact — an expanding, gap-less shockwave ring (see
       // spawnRing's new origin/expand params, hazards.js) is what actually
       // opens the vulnerable window. HP is untouched here.
-      spawnRing(true, 0, 18, 0, 340, .001, 1, { x: hand.x, y: hand.y }, true);
+      // Slam impact: make the expanding shockwave 50% slower and
+      // alternate gaps so it's an even "empty >> line >> empty >> line"
+      // pattern (two opposite safe gaps). Opening tuned to allow dodge.
+      spawnRing(true, 0, 18, 0, 170, 0.8, 2, { x: hand.x, y: hand.y }, true);
       kick(.06); tone(90, .18, 'sawtooth', .05);
       spawnSparks(hand.x, hand.y, 10, { color: EMBER, speed: [90, 220], life: .35 });
       hand.state = 'vulnerable'; hand.stateT = HAND_VULNERABLE_TIME;

@@ -579,7 +579,7 @@ const ARCHIVIST_WIN_ROUNDS = 5;
 // it a round that's never actually finished (see failEchoRound below) could
 // otherwise sit open forever. Running out counts exactly like a wrong touch:
 // it fails the round and costs a hit.
-const MEMORY_MATCH_ROUND_TIME = 10;
+const MEMORY_MATCH_ROUND_TIME = 12;
 
 // lengthOverride lets a caller pin the exact sequence length instead of
 // deriving it from battle.echoRound — used by Erif's Reprise segment (see
