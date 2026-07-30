@@ -494,6 +494,10 @@ function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null) {
     // bigger mouth below instead of crowding it.
     const faceSpin = now * .5;
     for (let i = 0; i < 8; i++) {
+      // The obvious, prominent eyes — this is what actually reads as "his
+      // eyes" at a glance, unlike the small ember dots further out on the
+      // orbit rings, so this is the loop that has to respect eyesLeft.
+      if (eyesLeft !== null && i >= eyesLeft) continue;
       const a = faceSpin + i * Math.PI / 4;
       const ex = Math.cos(a) * 34, ey = -18 + Math.sin(a) * 17;
       const wob = Math.sin(now * .3 + i * 3) * .15;
@@ -548,9 +552,13 @@ function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null) {
     // rendered their letters in black, invisible against the black background.
     ctx.fillStyle = '#fff';
 
-    // Eight lettered lieutenant emblems, enlarged — matches the ward-socket glyphs.
+    // Eight lettered lieutenant emblems, enlarged — matches the ward-socket
+    // glyphs. Tied to eyesLeft same as the face eyes above, so the live
+    // Reckoning HUD (drawErifHeadHUD) loses one of these too each time a
+    // hand actually breaks.
     const names = typeof REPRISE_ORDER !== 'undefined' ? REPRISE_ORDER : [];
     for (let i = 0; i < names.length; i++) {
+      if (eyesLeft !== null && i >= eyesLeft) continue;
       const a = rot * 1.3 + i * Math.PI / (names.length / 2), ox = Math.cos(a) * 104, oy = Math.sin(a) * 78;
       ctx.save(); ctx.lineWidth = 1.5; ctx.globalAlpha = ga * .85;
       ctx.beginPath(); ctx.arc(ox, oy, 12, 0, Math.PI * 2); ctx.stroke();
@@ -1539,14 +1547,20 @@ function drawBattle() {
     // unlike every other Erif phase this gets a real ticking number instead
     // of '???'.
     const left = Math.max(0, Math.ceil(RECKONING_TIME_LIMIT - (battle.t - battle.phaseStartT)));
+    // Smaller than the lieutenant timer's 27 — this one can run into 3
+    // digits (100 and up), which clipped out of the box's sides at that size.
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.strokeRect(685, uiY + 31, 40, 32);
-    text(`${left}`, 705, uiY + 47, 27);
+    text(`${left}`, 705, uiY + 47, 20);
   } else if (battle.type === 'erif') {
-    // The box stays for layout consistency with every other fight — just
-    // with no real number in it, since (unlike the lieutenants and the
-    // Reckoning above) this fight was never won by outlasting a clock.
+    // The whole fight (every phase before the Reckoning) now has its own
+    // real hard cap too (see ERIF_FIGHT_TIME_LIMIT, erif.js) — same ticking
+    // number as the Reckoning's own box above, just counting down from the
+    // fight's own start (battle.t) instead of the phase's.
+    const left = Math.max(0, Math.ceil(ERIF_FIGHT_TIME_LIMIT - battle.t));
+    // Same smaller size as the Reckoning's own box above — this one starts
+    // at 145, so it's 3 digits from the very start of the fight.
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.strokeRect(685, uiY + 31, 40, 32);
-    text('???', 705, uiY + 47, 20);
+    text(`${left}`, 705, uiY + 47, 20);
   }
   if (battle.type === 'erif' && battle.phase >= REPRISE_ORDER.length) {
     // Only the phases past the Reprise get a name here now — during the
@@ -1828,7 +1842,10 @@ function drawErifTrueVictory() {
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.strokeStyle = '#fff'; ctx.fillStyle = '#fff';
     const intensity = 4 + Math.pow(clamp(t / 2.2, 0, 1), 2) * 28;
     const sx = Math.sin(t * 61) * intensity, sy = Math.cos(t * 53) * intensity * .6;
-    drawBossIcon('erif', W / 2 + sx, H / 2 - 25 + sy, false);
+    // eyesLeft=0 — every ward is broken by the time this cinematic plays, so
+    // his eyes and the lettered ward ring are already stripped here too, not
+    // just once the dialogue phase's bare circle kicks in below.
+    drawBossIcon('erif', W / 2 + sx, H / 2 - 25 + sy, false, 1, 0);
     ctx.fillStyle = t > 1.5 ? EMBER : '#fff';
     text('THERE WAS NO EMBER LEFT TO HIDE BEHIND.', W / 2, 535, 16, 'center', clamp((t - .5) / 1.2, 0, 1));
     ctx.fillStyle = '#fff';
@@ -1840,12 +1857,14 @@ function drawErifTrueVictory() {
     lightScreenActive = true;
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = '#000'; ctx.strokeStyle = '#000';
     const idx = Math.min(battle.trueVictoryDialogueIndex, ERIF_TRUE_FINAL_DIALOGUE.length - 1);
-    // drawBossIcon always strokes in white, so — same fix as
-    // drawErifVictory's own dialogue phase — it needs an opaque dark
-    // backdrop drawn BEFORE it to stay visible now that the page itself is
-    // white, not the reverse order this had when the page was still black.
-    ctx.fillStyle = 'rgba(0,0,0,.85)'; ctx.fillRect(W / 2 - 145, 55, 290, 245);
-    drawBossIcon('erif', W / 2, 175, idx >= 2);
+    // No backdrop box, no horns/eyes/mouth/emblem ring — by the time this
+    // dialogue is up he's been truly, fully defeated (every ward broken),
+    // so there's nothing left of him to draw but a bare outline. A stroked
+    // circle needs no dark backdrop to read against the white page the way
+    // drawBossIcon's white-stroked portrait did.
+    ctx.save(); ctx.globalAlpha = idx >= 2 ? .35 : 1; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(W / 2, 175, 56, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
     ctx.fillStyle = '#000'; ctx.strokeStyle = '#000';
     text('You let the last ember go out.', W / 2, 330, 25, 'center', .85);
     const x = 82, y = 408, w = 796, h = 140;

@@ -74,8 +74,8 @@ function skipToErif() {
 const TITLE_ITEMS = [
   { key: 'normal', label: 'NORMAL', type: 'difficulty' },
   { key: 'hard', label: 'HARD', type: 'difficulty' },
-  { key: 'god', label: 'GOD MODE', type: 'toggle' },
   { key: 'skip', label: 'SKIP TO ERIF', type: 'toggle' },
+  { key: 'god', label: 'GOD MODE', type: 'toggle' },
   { key: 'reset', label: 'RESET DATA', type: 'action' },
 ];
 let titleMenuIndex = 0;

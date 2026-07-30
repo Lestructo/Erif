@@ -1062,7 +1062,7 @@ const RECKONING_TIME_LIMIT = 100, RECKONING_FADE_WINDOW = 5;
 // so realistic, non-perfect play clears all 8 wards with real buffer under
 // the 100s hard cap rather than right up against it — see
 // RECKONING_TIME_LIMIT above.
-const HAND_DOCK_OFFSET = 110; // either side of Erif's own anchor point
+const HAND_DOCK_OFFSET = 150; // either side of Erif's own anchor point — clear of the portrait's reaching-line fringe (~121px out at ERIF_HEAD_SCALE), not overlapping it
 const EQUIP_TIME = .35;
 const EMERGE_SPEED = 380, EMERGE_MIN_TIME = .4, EMERGE_MAX_TIME = .9;
 const WANDER_SPEED = 95, WANDER_TURN_RATE = 2.0;
@@ -1119,11 +1119,13 @@ const EYE_BALL_SPEED = BOUNCE_BALL_SPEED * .5, EYE_BALL_R = BOUNCE_BALL_R * 1.5;
 // did, so it still tracks the box's own grow-in animation for free.
 function erifHomeAnchor() {
   const b = battle.box;
-  // Nudged up from .40 — sitting closer to box-center made the big head
-  // portrait (see drawErifHeadHUD) overlap the gale gust's arena-centered
-  // wind arrow (drawBattle, render.js), which reads there specifically
-  // because it's centered in the box. Higher up leaves that arrow clear.
-  return { x: b.x + b.w * .5, y: b.y + b.h * .24 };
+  // Pulled up further still (.40 -> .24 -> .14) — sitting any closer to
+  // box-center kept the big head portrait (see drawErifHeadHUD) crowding
+  // toward the gale gust's arena-centered wind arrow (drawBattle,
+  // render.js), which reads there specifically because it's centered in
+  // the box. This high leaves real clearance below for both the arrow and
+  // the hands' own wandering room.
+  return { x: b.x + b.w * .5, y: b.y + b.h * .14 };
 }
 function handDockPos(index) {
   const home = erifHomeAnchor();
@@ -1470,7 +1472,16 @@ function handleErifPunch() {
       beginErifTrueVictory();
       return;
     }
-    if (battle.erifWardPool.length) {
+    // A hand already 'recharging' has first claim on the next ward it pops
+    // (see the 'recharging' branch in updateErifHand) — if it's the only one
+    // left in the pool, that claim already spoken for means there's really
+    // nothing left for THIS hand, even though the pool array itself hasn't
+    // shrunk yet. Without this check, this hand would sit through a whole
+    // pointless HAND_RECHARGE_TIME wait only to land on 'gone' anyway once
+    // the other hand actually takes the last ward first.
+    const otherHand = battle.erifHands.find(h => h !== target);
+    const otherClaim = otherHand && otherHand.state === 'recharging' ? 1 : 0;
+    if (battle.erifWardPool.length > otherClaim) {
       // Retreats, recharges for HAND_RECHARGE_TIME, then re-equips a new
       // random ward and rejoins on its own — see the 'retreating'/
       // 'recharging' branches in updateErifHand.
@@ -1580,11 +1591,16 @@ function updateErifHandsFinale(dt) {
   for (const hand of battle.erifHands) updateErifHand(hand, dt);
 
   // Loose head/hand coupling: the head softly drifts toward a blend of its
-  // home anchor and the centroid of currently-active (non-gone/equipping)
-  // hands — a slow lerp, not a snap-track, so it comfortably trails behind
-  // rather than rigidly locking on.
+  // home anchor and the centroid of currently-active (non-gone/equipping/
+  // recharging) hands — a slow lerp, not a snap-track, so it comfortably
+  // trails behind rather than rigidly locking on. Recharging hands are
+  // excluded same as equipping/gone ones — they're parked at their own dock
+  // point (see updateErifHand), not really "in the fight" yet, so counting
+  // one toward this centroid dragged the head off its own home anchor and
+  // right on top of that parked hand instead of leaving it sitting clearly
+  // off to the side.
   const home = erifHomeAnchor();
-  const active = battle.erifHands.filter(h => h.state !== 'gone' && h.state !== 'equipping');
+  const active = battle.erifHands.filter(h => h.state !== 'gone' && h.state !== 'equipping' && h.state !== 'recharging');
   const cx = active.length ? active.reduce((sum, h) => sum + h.x, 0) / active.length : home.x;
   const cy = active.length ? active.reduce((sum, h) => sum + h.y, 0) / active.length : home.y;
   const tx = lerp(home.x, cx, .4), ty = lerp(home.y, cy, .4);

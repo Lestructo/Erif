@@ -579,6 +579,11 @@ function updateOracle(dt, hard = false) {
 // Reuses layoutSigils/insideSigil from hazards.js — the same helpers Erif's
 // Convergence phases lean on later.
 const ECHO_SYMBOLS = ['circle', 'square', 'triangle', 'diamond', 'cross'];
+// layoutSigils' own default sigil radius (29) was too tight a touch target —
+// standing what visually looked like right on top of a circle sometimes
+// still didn't register. Bumped out to 30, which insideSigil's
+// soul.r + sig.r - 4 check reads directly as a wider tolerance margin.
+const ECHO_SIGIL_RADIUS = 30;
 // The trial is won by actually completing this many sequences, not by
 // surviving a clock — see updateArchivist's resolve handling. BOSS.archivist's
 // `duration` is just a generous safety cap now, same convention as Erif's.
@@ -601,7 +606,7 @@ function startEchoRound(hard = false, lengthOverride = null) {
   // (which always runs startEchoRound with hard=true regardless of the
   // actual difficulty tier) — one more option than Normal used to get here.
   const pool = ECHO_SYMBOLS;
-  layoutSigils(pool, 0, battle.box.w * .36, battle.box.h * .30);
+  layoutSigils(pool, 0, battle.box.w * .36, battle.box.h * .30, ECHO_SIGIL_RADIUS);
   const names = battle.sigils.map(s => s.name);
   // Normal's starting length dropped 3 -> 2 (hard's stays at 4), and the
   // round-5 cap dropped 6 -> 5 — Normal now ramps 2,3,4,5,5 instead of
@@ -666,25 +671,22 @@ function updateEchoInput(dt) {
     }
     if (touchedWrong) { failEchoRound(); return; }
     if (touchedRight) {
-      battle.echoTouchHold += dt;
-      if (battle.echoTouchHold >= .16) {
-        const sig = battle.sigils.find(s => s.name === expected);
-        // +0.25s over the old .3s, and the render side (see render.js) draws
-        // this thicker too — makes it easier to actually tell which sigil in
-        // the sequence just registered as correctly touched.
-        battle.sigilPulse = { x: sig.x, y: sig.y, t: .55, maxT: .55, name: expected };
-        tone(520 + battle.echoStep * 40, .09, 'sine', .035);
-        battle.echoStep++;
-        battle.echoTouchHold = 0;
-        if (battle.echoStep >= battle.echoSequence.length) {
-          battle.echoPhase = 'resolve'; battle.echoResolveTimer = .6; battle.echoFail = false;
-          battle.echoSuccesses++;
-          tone(700, .18, 'sine', .04);
-        } else {
-          battle.echoAwaitingExit = true;
-        }
+      // Registers the instant you're inside the right sigil — no hold delay,
+      // same as a wrong touch already failed instantly. Was a .16s hold
+      // before landing; that asymmetry (wrong = instant, right = delayed)
+      // made a fast correct touch feel like it hadn't registered.
+      const sig = battle.sigils.find(s => s.name === expected);
+      battle.sigilPulse = { x: sig.x, y: sig.y, t: .55, maxT: .55, name: expected };
+      tone(520 + battle.echoStep * 40, .09, 'sine', .035);
+      battle.echoStep++;
+      if (battle.echoStep >= battle.echoSequence.length) {
+        battle.echoPhase = 'resolve'; battle.echoResolveTimer = .6; battle.echoFail = false;
+        battle.echoSuccesses++;
+        tone(700, .18, 'sine', .04);
+      } else {
+        battle.echoAwaitingExit = true;
       }
-    } else battle.echoTouchHold = 0;
+    }
   }
 }
 

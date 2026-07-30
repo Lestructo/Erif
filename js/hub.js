@@ -116,7 +116,7 @@ function updateExplore(dt) {
     // BPM (was .3s) and 25% quieter (was .012) so a faster cadence doesn't
     // also read as louder.
     footstepTimer -= dt;
-    if (footstepTimer <= 0) { tone(90 + rand(-8, 8), .05, 'square', .009, null, 'sfx'); footstepTimer = .1; }
+    if (footstepTimer <= 0) { tone(90 + rand(-8, 8), .05, 'square', .005, null, 'sfx'); footstepTimer = .1; }
   } else footstepTimer = 0;
   clampToRoom(b);
 
