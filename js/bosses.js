@@ -603,9 +603,10 @@ function startEchoRound(hard = false, lengthOverride = null) {
   const pool = ECHO_SYMBOLS;
   layoutSigils(pool, 0, battle.box.w * .36, battle.box.h * .30);
   const names = battle.sigils.map(s => s.name);
-  // Normal's starting length dropped 3 -> 2 (hard's stays at 4) — a little
-  // easier of an on-ramp before the same round-5 cap (6) as before.
-  const length = lengthOverride ?? Math.min((hard ? 4 : 2) + battle.echoRound - 1, hard ? 8 : 6);
+  // Normal's starting length dropped 3 -> 2 (hard's stays at 4), and the
+  // round-5 cap dropped 6 -> 5 — Normal now ramps 2,3,4,5,5 instead of
+  // topping out a step higher than the round it's actually reached on.
+  const length = lengthOverride ?? Math.min((hard ? 4 : 2) + battle.echoRound - 1, hard ? 8 : 5);
   battle.echoSequence = Array.from({ length }, () => choose(names));
   battle.echoStep = 0;
   battle.echoPhase = 'reveal';
