@@ -1,0 +1,25 @@
+:root {
+  color-scheme: dark;
+  --ember: #ff3b20;
+  --ember-dim: #7a1c10;
+}
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: "Courier New", monospace;
+}
+body {
+  display: grid;
+  place-items: center;
+}
+canvas {
+  background: #000;
+  /* Fill as much of the viewport as possible while holding the game's 3:2
+     (960:640) aspect ratio — the classic fluid aspect-ratio-box trick.
+     141vh = 94vh * 1.5; 62.7vw = 94vw / 1.5. */
+  width: min(94vw, 141vh);
+  height: min(94vh, 62.7vw);
+}

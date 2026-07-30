@@ -1,0 +1,6 @@
+# AI / Local tool configs
+.claude/
+
+# OS metadata
+.DS_Store
+Thumbs.db
