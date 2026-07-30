@@ -729,8 +729,10 @@ function updateEnraged(dt) {
     // (gapCount up to 5) plus multiple overlapping rings shrinking at once,
     // the tighter gap made it too easy to get squeezed with nowhere safe to
     // stand; this stays closer to Verdict's own standalone opening size
-    // (.36-.52) so it never reads as unfair.
-    spawnRing(true, battle.ringGapA, 365, battle.ringArcDirection * .04, 56, answerPassages <= 1 ? 1.0 : .42, answerPassages);
+    // (.36-.52) so it never reads as unfair. Ensure Enraged always leaves
+    // at least two passage gaps so the player has multiple lanes to choose.
+    const enrageGapCount = Math.max(answerPassages, 2);
+    spawnRing(true, battle.ringGapA, 365, battle.ringArcDirection * .04, 56, answerPassages <= 1 ? 1.0 : .42, enrageGapCount);
     battle.enrageRingTimer = 1.63; // +25% (was 1.30) — less ring spam stacking back to back
   }
   battle.enrageVolleyTimer -= dt;
