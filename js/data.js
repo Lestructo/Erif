@@ -10,11 +10,12 @@
 // DIFFICULTY.xMult ever needs to change.
 // Hard still gets the twist/True Final ending too, since that's gated on
 // the 'hard' key itself (see updateErifVictory, erif.js), not on any of
-// these numbers. Normal: hazards 25% slower, full reaction time. Hard:
-// full-speed hazards, reaction/warning windows cut to 75%. Same HP either way.
+// these numbers. Normal: hazards half speed, telegraphs 25% longer than
+// baseline. Hard: hazards 25% slower than baseline, full-length telegraphs.
+// Same HP either way.
 const DIFFICULTY_TIERS = {
-  normal: { projectileMult: .75, telegraphMult: 1, lieutenantHp: 3 },
-  hard:   { projectileMult: 1, telegraphMult: .75, lieutenantHp: 3 },
+  normal: { projectileMult: .5, telegraphMult: 1.25, lieutenantHp: 3 },
+  hard:   { projectileMult: .75, telegraphMult: 1, lieutenantHp: 3 },
 };
 const DIFFICULTY = { projectileMult: 1, telegraphMult: 1 };
 let difficultyTier = 'normal';

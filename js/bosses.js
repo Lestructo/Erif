@@ -177,8 +177,17 @@ function updateHourglass(dt, hard = false) {
 // segment begins — see bumpErifPhase) offsets it back to 0 there; it's
 // always 0 itself for the standalone trial, so battle.t - phaseStartT is
 // just battle.t again there, unchanged.
+// The cycle length itself also now matches whatever this Verdict instance's
+// own total run actually is: 7s for the standalone trial (unchanged), but
+// 10s for Erif's Reprise segment (see its own 10s window, erif.js) — at the
+// old fixed 7s, a 10s segment would run normal(3.5s) -> burst(3.5s) ->
+// normal again for a stray 3s before getting cut off, instead of one clean
+// normal-then-burst split. Matching the cycle to the segment length means
+// exactly one clean transition, halfway through, every time.
 function verdictPhaseProgress(hard = false) {
-  return hard ? ((battle.t - battle.phaseStartT) % 7) / 7 : battle.t / battle.duration;
+  if (!hard) return battle.t / battle.duration;
+  const cycle = battle.type === 'erif' ? 10 : 7;
+  return ((battle.t - battle.phaseStartT) % cycle) / cycle;
 }
 // Verdict was landing as the easiest trial in the roster, so every knob
 // here got pushed up a step: rings close faster, their gap actually spins
@@ -667,7 +676,12 @@ function startShapePattern(hard = false) {
   battle.shapeZones = types.map((type, i) => ({ type, x: spots[i].x, y: spots[i].y, size: (hard ? 40 : 46) * erifBoost }));
   battle.shapeCue = choose(types.filter(t => t !== oldCue));
   battle.shapeState = 'barrage';
-  battle.shapeTimer = hard ? 1.35 : 1.62;
+  // Erif's Reprise segment isn't on a flat timer like most others — it runs
+  // until 2 full barrage/seek/judgment cycles complete (see
+  // updateRepriseWitness), so there's no single duration constant to bump.
+  // +.75s to the barrage phase here, twice over across those 2 cycles, adds
+  // 1.5s to the segment overall instead. Standalone fight unaffected.
+  battle.shapeTimer = (hard ? 1.35 : 1.62) + (battle.type === 'erif' ? .75 : 0);
   battle.spawn = hard ? .12 : .16;
 
   const unsafe = battle.shapeZones.filter(z => z.type !== battle.shapeCue);

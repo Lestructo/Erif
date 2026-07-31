@@ -677,9 +677,27 @@ const ERIF_ENRAGE_MINIGAME_PLAN = [
 // the next segment. Returns true the instant the whole plan is complete,
 // having already kicked off Final Convergence — callers should bail out for
 // the frame when this happens.
+// A fast, skilled clear of the two memory rounds especially could finish
+// the whole plan well under Enraged's own typical ~50s pace, dropping the
+// player into Final Convergence far earlier than intended (and well before
+// the Enraged dialogue's own 80s-remaining music sync had anything to line
+// up against). ENRAGE_MIN_DURATION floors how early that transition can
+// actually fire.
+const ENRAGE_MIN_DURATION = 40;
 function advanceEnrageSegment() {
   battle.enrageSegmentIndex++;
-  if (battle.enrageSegmentIndex >= ERIF_ENRAGE_MINIGAME_PLAN.length) { startErifFinalConvergence(); return true; }
+  if (battle.enrageSegmentIndex >= ERIF_ENRAGE_MINIGAME_PLAN.length) {
+    if (battle.t - battle.phaseStartT < ENRAGE_MIN_DURATION) {
+      // Under the floor — don't transition yet. No separate "waiting" state
+      // needed: updateEnraged's own `!enrageSeg` fallback already treats an
+      // out-of-range segment index as an ordinary bonus math question, so
+      // this just naturally keeps looping bonus rounds (background hazards
+      // included) until the floor's met on some later call here.
+      return true;
+    }
+    startErifFinalConvergence();
+    return true;
+  }
   return false;
 }
 // A single wind gust, ever — reuses the standalone/Reprise Gale's own
@@ -747,7 +765,7 @@ function updateEnraged(dt) {
   if (!battle.enrageInitialized) {
     battle.enrageInitialized = true;
     battle.ringGapA = rand(0, Math.PI * 2); battle.ringArcDirection = choose([-1, 1]);
-    battle.enrageRingTimer = .15; battle.enrageVolleyTimer = 1.1; battle.enrageShardTimer = .12; battle.enrageQuestionTimer = 1.8;
+    battle.enrageRingTimer = .15; battle.enrageVolleyTimer = 1.1; battle.enrageShardTimer = .12; battle.enrageQuestionTimer = 1.0; // was 1.8 — trimmed as part of aiming the whole phase back toward ~50s
     battle.maskMirrorTimer = rand(1.8, 2.8);
     // Anchored off the box's own final grown size (battle.boxGrowTo, always
     // ERIF_ENRAGE_BOX by the time this runs — see beginErifEnraged), not the
@@ -812,7 +830,7 @@ function updateEnraged(dt) {
         battle.qOptionCountOverride = enrageSeg ? enrageSeg.value : null;
         battle.q = generateOracleQuestion(true);
         battle.qOptionCountOverride = null;
-        battle.qMax = 5.15; battle.qTimer = battle.qMax; battle.lasers = []; // +2s over the base 3.15s
+        battle.qMax = 3.15; battle.qTimer = battle.qMax; battle.lasers = []; // back to the base — see the enrageQuestionTimer/gap trims below for the actual pacing fix
         tone(335, .10, 'triangle', .035);
       }
     } else if (battle.lasers.length === 0) {
@@ -827,7 +845,7 @@ function updateEnraged(dt) {
     for (const l of battle.lasers) { l.t -= dt; if (rectHit(l)) hurt(); }
     battle.lasers = battle.lasers.filter(l => l.t > 0);
     if (hadLasers && !battle.lasers.length) {
-      battle.q = null; battle.enrageQuestionTimer = 1.2;
+      battle.q = null; battle.enrageQuestionTimer = .6; // was 1.2 — trimmed as part of aiming the whole phase back toward ~50s
       if (advanceEnrageSegment()) return;
     }
   } else {
@@ -1751,19 +1769,20 @@ function updateErif(dt) {
     // but three can't be fairly cut off mid-something, so those instead
     // advance only once their own solve/cycle requirement is met (see
     // updateRepriseArchivist/updateRepriseOracle/updateRepriseHourglass
-    // above). Executioner and Mask get their own shorter fixed window (5s)
-    // instead of the default — the whole Reprise is meant to move fast.
-    // Gale gets its own window too (5s). Verdict gets its own longer window
-    // (10s) — its normal/burst cycle (see verdictPhaseProgress, bosses.js)
-    // needs real room to actually show both halves.
+    // above). Executioner and Mask get their own shorter fixed window
+    // (4.5s) instead of the default — the whole Reprise is meant to move
+    // fast. Gale gets its own longer window (7s). Verdict gets its own
+    // longer window too (10s) — its normal/burst cycle (see
+    // verdictPhaseProgress, bosses.js) needs real room to actually show
+    // both halves.
     const segmentDone =
       name === 'archivist' ? battle.repriseArchivistDone :
       name === 'oracle' ? battle.repriseOracleDone :
       name === 'hourglass' ? battle.repriseHourglassDone :
       name === 'witness' ? battle.repriseWitnessDone :
       battle.repriseSegElapsed >= (
-        name === 'executioner' || name === 'mask' ? 5 :
-        name === 'gale' ? 5 :
+        name === 'executioner' || name === 'mask' ? 4.25 :
+        name === 'gale' ? 7 :
         name === 'verdict' ? 10 :
         REPRISE_SEGMENT
       );

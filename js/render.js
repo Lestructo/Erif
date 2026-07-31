@@ -939,10 +939,48 @@ function drawErifEyeBall(eye) {
   ctx.beginPath(); ctx.arc(eye.x, eye.y, eye.r * .4, 0, Math.PI * 2); ctx.fill();
 }
 
+// Purely atmospheric — no hitbox, no gameplay interaction — for Final
+// Convergence specifically: Erif himself drifts slowly in the background,
+// and a pair of his own hands idly float in the margins outside the box,
+// left and right. Underlines that the Reckoning is coming without adding
+// any real difficulty here — and without reading as an active threat, so
+// they just drift rather than reaching for or gripping anything.
+// Reuses the Reckoning's own hand visual language (forearm + the same
+// 1-thumb/3-pointer fanned spread, see drawErifHand/HAND_FINGERS in erif.js)
+// rather than an unrelated shape — meant to read as literally the same
+// hands the player will fight later, not just something hand-shaped. Half
+// the size of an earlier "gripping the frame" version of this that didn't
+// read well.
+const FLOATING_HAND_SCALE = 1.05;
+function drawErifFloatingHand(px, py, facing) {
+  ctx.save();
+  ctx.translate(px, py); ctx.rotate(facing); ctx.scale(FLOATING_HAND_SCALE, FLOATING_HAND_SCALE);
+  ctx.globalAlpha = .4; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  line(-8, 0, -34, 0, 6); // forearm
+  for (let i = 0; i < HAND_FINGERS.length; i++) {
+    const cfg = HAND_FINGERS[i];
+    const kx = Math.cos(cfg.angle) * 9, ky = Math.sin(cfg.angle) * 9;
+    const reach = (cfg.reachMin + cfg.reachMax) / 2; // relaxed, half-open — not reaching for anything
+    line(kx, ky, Math.cos(cfg.angle) * reach, Math.sin(cfg.angle) * reach, cfg.thumb ? 5 : 4);
+  }
+  ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+function drawFinalConvergenceErifPresence() {
+  const t = battle.t;
+  const driftT = t * .12;
+  drawBossIcon('erif', W / 2 + Math.sin(driftT) * 260, 300 + Math.cos(driftT * .7) * 90, true, .85);
+  // Each hand wanders within its own side's margin outside the box (the box
+  // spans x=140 to 820 here — see ERIF_ENRAGE_BOX, erif.js — leaving a
+  // 140px-wide strip on either side), never crossing into it.
+  drawErifFloatingHand(70 + Math.sin(t * .17) * 45, H / 2 + Math.sin(t * .13) * 240, Math.sin(t * .09) * .5);
+  drawErifFloatingHand(W - 70 + Math.sin(t * .15 + 2) * 45, H / 2 + Math.sin(t * .11 + 3) * 240, Math.PI + Math.sin(t * .1 + 1) * .5);
+}
 function drawBattle() {
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.strokeStyle = '#fff'; ctx.fillStyle = '#fff';
   const b = battle.box; drawFloorGrid(b.x, b.y, b.w, b.h);
   drawEmbers(); // background layer — behind every hazard/boss/candle drawn below
+  if (battle.type === 'erif' && battle.phase === PHASE_FINAL_CONVERGENCE) drawFinalConvergenceErifPresence();
   // Enraged onward (Enraged, Final Convergence, the Reckoning) all skip the
   // header — the arena is tall enough from Enraged on (see ERIF_ENRAGE_BOX,
   // erif.js) that there isn't room for both it and the box, and Erif's own
