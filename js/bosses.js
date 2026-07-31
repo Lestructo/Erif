@@ -60,14 +60,24 @@ function spawnHourglassOrb(hard = false) {
   const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
   const heading = Math.atan2(cy - y, cx - x) + rand(-.6, .6);
   const speed = (hard ? 44 : 34) * DIFFICULTY.projectileMult;
-  // r cut in half (37 -> 18.5) — the outward-drift fix already caps how long
-  // one can linger on screen, so the earlier size bump compensating for that
-  // was too much once the visual actually matched the hitbox.
-  battle.hourglassOrbs.push({ x, y, r: 18.5, heading, turnRate: rand(-1.1, 1.1), speed, spin: rand(0, Math.PI * 2), age: 0 });
+  // Base r dropped again (18.5 -> 15). During the slow phase specifically,
+  // orbs are still 50% bigger — same "make the slow phase read as a bigger,
+  // more deliberate telegraph" idea spawnSandGrain's own slowMult already
+  // uses, just off the new smaller base.
+  const slowMult = battle.sandPhase === 'slow' ? 1.5 : 1;
+  battle.hourglassOrbs.push({ x, y, r: 15 * slowMult, heading, turnRate: rand(-1.1, 1.1), speed, spin: rand(0, Math.PI * 2), age: 0 });
   tone(180, .1, 'triangle', .02);
 }
 function updateHourglassOrbs(dt) {
   const s = battle.soul, b = battle.box, ts = battle.timeScale || 1;
+  // Orbs actually have to complete a real journey to the middle to matter —
+  // the slow phase's own full timeScale (as low as .25) made that trip take
+  // far longer than the slow phase itself lasts, so an orb spawned right at
+  // the edge just sat there barely creeping for its whole time in play,
+  // reading as stuck/vanished rather than drifting in. Floored here,
+  // specifically for orb movement (spin/age below still use the raw ts), so
+  // the slow phase still visibly reads as slower without freezing them.
+  const moveTs = Math.max(ts, .55);
   const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
   for (const o of battle.hourglassOrbs) {
     o.spin += dt * 1.6 * ts;
@@ -107,8 +117,8 @@ function updateHourglassOrbs(dt) {
       const outwardPull = forceOut ? 1.1 : clamp(o.age / 7, 0, 1) * 1.1;
       o.heading += outwardDiff * outwardPull * dt;
     }
-    o.x += Math.cos(o.heading) * o.speed * ts * dt;
-    o.y += Math.sin(o.heading) * o.speed * ts * dt;
+    o.x += Math.cos(o.heading) * o.speed * moveTs * dt;
+    o.y += Math.sin(o.heading) * o.speed * moveTs * dt;
     if (dist(o.x, o.y, s.x, s.y) < s.r + o.r - 2) { o.dead = true; hurt(); }
   }
   battle.hourglassOrbs = battle.hourglassOrbs.filter(o => !o.dead &&
@@ -140,6 +150,10 @@ function updateHourglass(dt, hard = false) {
     if (Math.random() < (hard ? .49 : .3)) spawnHourglassOrb(hard);
     if (hard && Math.random() < .225) spawnHourglassOrb(hard);
     battle.hourglassOrbTimer = (hard ? rand(1.0, 1.44) : rand(1.31, 1.81)) / battle.timeScale;
+    // Fast phase's own high timeScale already made this interval short (more
+    // orbs); doubling it back out here halves the overall spawn volume
+    // specifically during fast, without touching the slow phase's cadence.
+    if (battle.sandPhase === 'fast') battle.hourglassOrbTimer *= 2;
   }
   updateHourglassOrbs(dt);
 }
@@ -161,10 +175,15 @@ function spawnVerdictRing(hard = false) {
 }
 function beginVerdictSpiral(hard = false) {
   battle.ringArcMode = true;
-  battle.ringGapA = rand(0, Math.PI * 2);
+  // Any regular rings still in flight now carry over into the burst phase
+  // instead of being force-cleared — but the burst's own starting gap has
+  // to pick up from wherever the most recent one already is, not roll an
+  // independent random angle, or the two could easily leave no shared safe
+  // window at the exact moment they overlap.
+  const lastRegular = battle.rings[battle.rings.length - 1];
+  battle.ringGapA = lastRegular ? lastRegular.gapA : rand(0, Math.PI * 2);
   battle.ringArcDirection = choose([-1, 1]);
   battle.ringSwitchTimer = hard ? rand(2.2, 3.2) : rand(3.2, 4.6);
-  battle.rings = [];
   battle.spawn = 0;
   tone(hard ? 235 : 210, .10, 'triangle', .035);
 }
@@ -268,8 +287,15 @@ function updateGaleFlags(dt) {
 // as streaks of wind rather than launched steel. Each carries its own
 // countdown before actually crossing the box, same shrinking-telegraph
 // convention as everything else in this game.
-function spawnWindRow(hard = false) {
-  const b = battle.box, dir = battle.galeWindDir || choose(['up', 'down', 'left', 'right']);
+// allowExtra: rolls a chance to queue 1-3 bonus rows from a different side,
+// each arriving 2-3s after the last (see updateWindLines, which ticks the
+// queue) — centralized here so every caller (the standalone/Reprise fight's
+// own cadence, Convergence/Final Convergence's one-shot cue, Enraged's and
+// the Reckoning's one-shot gusts) gets the same chance for free, rather than
+// needing each call site to remember to roll it separately. Extras spawn
+// with allowExtra=false so one bonus row can't itself chain into more.
+function spawnWindRow(hard = false, dirOverride = null, allowExtra = true) {
+  const b = battle.box, dir = dirOverride || battle.galeWindDir || choose(['up', 'down', 'left', 'right']);
   const axisLen = (dir === 'up' || dir === 'down') ? b.w : b.h;
   // Varies row to row now (was a fixed 5, or 6 on hard) — 4/5/6 normally,
   // 5/6/7 on hard, so a row isn't always the same width to read at a glance.
@@ -287,6 +313,12 @@ function spawnWindRow(hard = false) {
     });
   }
   tone(210, .08, 'sine', .025);
+  if (allowExtra && Math.random() < (hard ? .4 : .3)) {
+    battle.windRowExtraHard = hard;
+    battle.windRowExtraDir = dir;
+    battle.windRowExtraQueue = Math.floor(rand(1, 4));
+    battle.windRowExtraTimer = rand(2, 3);
+  }
 }
 // travelOverride lets the renderer sample earlier points along the same
 // wave (see render.js) to draw a real curving trail instead of a straight
@@ -301,6 +333,18 @@ function windLineXY(w, b, travelOverride) {
 }
 function updateWindLines(dt) {
   const b = battle.box, s = battle.soul;
+  // Ticks any bonus rows queued up by spawnWindRow's own chance roll — lives
+  // here (not in updateGale) so it's active in every context that ever
+  // calls spawnWindRow, not just the standalone/Reprise fight's own loop.
+  if (battle.windRowExtraQueue > 0) {
+    battle.windRowExtraTimer -= dt;
+    if (battle.windRowExtraTimer <= 0) {
+      const otherDirs = ['up', 'down', 'left', 'right'].filter(d => d !== battle.windRowExtraDir);
+      spawnWindRow(battle.windRowExtraHard, choose(otherDirs), false);
+      battle.windRowExtraQueue--;
+      battle.windRowExtraTimer = rand(2, 3);
+    }
+  }
   for (const w of battle.windLines) {
     if (!w.fired) {
       w.t -= dt;
@@ -328,7 +372,11 @@ function beginGaleGust(hard) {
 }
 function launchGaleGust(hard) {
   battle.galeGustPhase = 'active';
-  const dur = hard ? 1.6 : 1.3;
+  // Cut 20% (1.6/1.3 -> 1.28/1.04) — this is also how long controlsInverted
+  // stays true, and it's the one shared function every gust everywhere
+  // (standalone, Reprise, Enraged, Final Convergence, the Reckoning)
+  // funnels through, so the cut applies uniformly everywhere.
+  const dur = (hard ? 1.6 : 1.3) * .8;
   battle.galeGustTimer = dur; battle.galeGustMax = dur;
   battle.controlsInverted = true;
   // Push halved (was hard?165:130) — the control inversion alone is
@@ -346,7 +394,7 @@ function endGaleGust(hard) {
   battle.galeGustPhase = null;
   battle.controlsInverted = false;
   battle.windVX = 0; battle.windVY = 0;
-  battle.galeGustCooldown = hard ? rand(2.2, 3.0) : rand(2.8, 3.8);
+  battle.galeGustCooldown = hard ? rand(2, 3) : rand(3, 4);
 }
 function updateGale(dt, hard = false) {
   moveSoulWithShield(dt, hard ? 205 : 190);
@@ -464,15 +512,21 @@ function updateExecutioner(dt, hard = false) {
 // ---- THE WITNESS — Testimony. Safe-shape matching amid a barrage. ----
 function startShapePattern(hard = false) {
   const b = battle.box, types = shuffleArray(['circle', 'triangle', 'square']);
+  // Widened slightly (.27/.73 -> .24/.76) — a little more horizontal
+  // breathing room between the three zones, for both the standalone fight
+  // and Erif's Reprise segment alike.
   const spots = [
-    { x: b.x + b.w * .27, y: b.y + b.h * .65 },
+    { x: b.x + b.w * .24, y: b.y + b.h * .65 },
     { x: b.x + b.w * .50, y: b.y + b.h * .36 },
-    { x: b.x + b.w * .73, y: b.y + b.h * .65 },
+    { x: b.x + b.w * .76, y: b.y + b.h * .65 },
   ];
   const oldCue = battle.shapeCue;
   // Shrunk from the original 58/69 — at that size, adjacent zones (spaced
-  // ~115px apart) could overlap by as much as 15px.
-  battle.shapeZones = types.map((type, i) => ({ type, x: spots[i].x, y: spots[i].y, size: hard ? 40 : 46 }));
+  // ~115px apart) could overlap by as much as 15px. Erif's fight specifically
+  // gets these 25% bigger (still comfortably under the overlap threshold
+  // even with the wider spacing above) — everywhere else unchanged.
+  const erifBoost = battle.type === 'erif' ? 1.25 : 1;
+  battle.shapeZones = types.map((type, i) => ({ type, x: spots[i].x, y: spots[i].y, size: (hard ? 40 : 46) * erifBoost }));
   battle.shapeCue = choose(types.filter(t => t !== oldCue));
   battle.shapeState = 'barrage';
   battle.shapeTimer = hard ? 1.35 : 1.62;

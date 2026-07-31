@@ -164,6 +164,10 @@ function makeBattle(type) {
     galeFlagTimer: 1.5,
     windLines: [],
     windRowTimer: 2.2,
+    windRowExtraQueue: 0, // remaining bonus rows (from a different side) queued up after a chance roll
+    windRowExtraTimer: 0,
+    windRowExtraHard: false,
+    windRowExtraDir: null,
     // Erif's Convergence / Enraged / Final Convergence (phases 7-9)
     phaseStartT: 0,
     convergenceOrbit: 0,
@@ -319,6 +323,7 @@ function clearHazards() {
   battle.galeGustCooldown = 0; battle.controlsInverted = false; battle.windVX = 0; battle.windVY = 0;
   battle.galeFlags = []; battle.galeFlagTimer = 1.5;
   battle.windLines = []; battle.windRowTimer = 2.2;
+  battle.windRowExtraQueue = 0; battle.windRowExtraTimer = 0;
   // Convergence/Enraged/Final Convergence hazards and per-cue timers reset on
   // every phase boundary; the lifetime flags (enraged, finalConvergence,
   // finalCaptured, erifVictoryStarted) do NOT reset here — those track
@@ -376,6 +381,7 @@ function clearHazardsKeepProjectiles() {
   battle.galeGustCooldown = 0; battle.controlsInverted = false; battle.windVX = 0; battle.windVY = 0;
   battle.galeFlagTimer = 1.5;
   battle.windRowTimer = 2.2;
+  battle.windRowExtraQueue = 0; battle.windRowExtraTimer = 0;
 }
 
 function startBoss(type) {

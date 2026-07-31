@@ -209,6 +209,9 @@ function updateRepriseHourglass(dt) {
     if (Math.random() < .49) spawnHourglassOrb(true);
     if (Math.random() < .225) spawnHourglassOrb(true);
     battle.hourglassOrbTimer = rand(1.0, 1.44) / battle.timeScale;
+    // Same fast-phase halving as the standalone fight's updateHourglass —
+    // see bosses.js.
+    if (battle.sandPhase === 'fast') battle.hourglassOrbTimer *= 2;
   }
   updateHourglassOrbs(dt);
 }
@@ -674,7 +677,14 @@ function updateOneShotGaleGust(dt, hard, usedField, timerField, requireGaleCue =
   }
   if (battle.galeGustPhase === 'telegraph') {
     battle.galeGustTimer -= dt;
-    if (battle.galeGustTimer <= 0) launchGaleGust(hard);
+    if (battle.galeGustTimer <= 0) {
+      launchGaleGust(hard);
+      // Enraged's one-shot gust had no wind-line row at all (unlike the
+      // standalone/Reprise fight and Final Convergence's own gale cue,
+      // which already spawns one separately) — requireGaleCue excludes
+      // Final Convergence here so it doesn't end up with two.
+      if (!requireGaleCue) spawnWindRow(hard);
+    }
   } else if (battle.galeGustPhase === 'active') {
     const b = battle.box, s = battle.soul;
     s.x = clamp(s.x + battle.windVX * dt, b.x + s.r, b.x + b.w - s.r);
@@ -837,7 +847,7 @@ function startErifFinalConvergence() {
 // (not snapping to 0) if the soul steps out, paired with the arena itself
 // slowly closing in (see updateFinalConvergence's finalShrinkTimer).
 const FINAL_CONVERGENCE_HOLD_TIME = 1.5;
-const FINAL_CONVERGENCE_LEAVE_DECAY = .5;
+const FINAL_CONVERGENCE_LEAVE_DECAY = .25;
 function startFinalCommand() {
   battle.q = null; battle.lasers = []; battle.inkTimer = 0; battle.inkSpawn = 0;
   const remaining = remainingFinalFamilies();
@@ -864,7 +874,7 @@ function updateFinalConvergence(dt) {
   // sigil is the active cue — see updateOneShotGaleGust.
   updateOneShotGaleGust(dt, true, 'finalGaleGustUsed', 'finalGaleGustTimer', true);
   // Verdict's own cue: a plain rotating ring with a gap, spawned fresh every
-  // ~1.2s for as long as its sigil is the active cue — see
+  // ~1.5s for as long as its sigil is the active cue — see
   // spawnConvergenceCueHazard's verdict branch, which just arms this timer
   // rather than bursting out a whole batch at once.
   if (battle.convergenceCue === 'verdict') {
@@ -872,7 +882,7 @@ function updateFinalConvergence(dt) {
     if (battle.finalVerdictRingTimer <= 0) {
       battle.finalVerdictRingA += battle.convergenceOrbitDir * .35;
       spawnRing(true, battle.finalVerdictRingA, 360, battle.convergenceOrbitDir * 1.0, 160, .45, 2);
-      battle.finalVerdictRingTimer = 1.2;
+      battle.finalVerdictRingTimer = 1.5;
     }
   }
   battle.finalTransitionFlash = Math.max(0, battle.finalTransitionFlash - dt);
@@ -1526,7 +1536,13 @@ function updateErifHandHazards(dt) {
   updateErifEyeBalls(dt);
   if (battle.galeGustPhase === 'telegraph') {
     battle.galeGustTimer -= dt;
-    if (battle.galeGustTimer <= 0) launchGaleGust(true);
+    if (battle.galeGustTimer <= 0) {
+      launchGaleGust(true);
+      // The Reckoning's gale-ward finger attack only ever fired a gust —
+      // no wind-line row like every other gale context has. Added here so
+      // it's consistent with the rest.
+      spawnWindRow(true);
+    }
   } else if (battle.galeGustPhase === 'active') {
     const b = battle.box, s = battle.soul;
     s.x = clamp(s.x + battle.windVX * dt, b.x + s.r, b.x + b.w - s.r);
@@ -1693,8 +1709,10 @@ function updateErif(dt) {
     // advance only once their own solve/cycle requirement is met (see
     // updateRepriseArchivist/updateRepriseOracle/updateRepriseHourglass
     // above). Executioner and Mask get their own shorter fixed window (5s)
-    // instead of the default — the whole Reprise is meant to move fast. Gale
-    // and Verdict get a flat 10s instead, longer than the default 7s.
+    // instead of the default — the whole Reprise is meant to move fast.
+    // Gale and Verdict used to get a longer flat window (was 10s, then 8s)
+    // but that's now down to 7s too, matching REPRISE_SEGMENT exactly, so
+    // they no longer need their own special case at all.
     const segmentDone =
       name === 'archivist' ? battle.repriseArchivistDone :
       name === 'oracle' ? battle.repriseOracleDone :
@@ -1702,7 +1720,6 @@ function updateErif(dt) {
       name === 'witness' ? battle.repriseWitnessDone :
       battle.repriseSegElapsed >= (
         name === 'executioner' || name === 'mask' ? 5 :
-        name === 'gale' || name === 'verdict' ? 10 :
         REPRISE_SEGMENT
       );
     if (segmentDone) {
