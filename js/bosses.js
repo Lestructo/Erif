@@ -166,8 +166,19 @@ function updateHourglass(dt, hard = false) {
 // ---- THE VERDICT — Judgment. Ring/gap rotating-dodge (the mechanic that
 // used to belong to the Hourglass, reskinned — see the plan notes on why: a
 // closing ring reads as a verdict/encirclement, not a countdown). ----
+// Hard's cycle was keyed off battle.t directly — the whole fight's own
+// continuous clock. That's fine for the standalone trial (battle.t starts
+// at 0 there anyway), but Erif's Reprise segment starts at whatever
+// battle.t happens to be once every earlier segment has run, i.e. a
+// essentially random point in the 7s cycle — so the Verdict segment could
+// begin already 5-6s into a cycle, run "normal" rings for only 1-2s, then
+// abruptly flip to the burst phase, reading as a broken quick-cut rather
+// than a real first phase. battle.phaseStartT (set fresh the instant this
+// segment begins — see bumpErifPhase) offsets it back to 0 there; it's
+// always 0 itself for the standalone trial, so battle.t - phaseStartT is
+// just battle.t again there, unchanged.
 function verdictPhaseProgress(hard = false) {
-  return hard ? (battle.t % 7) / 7 : battle.t / battle.duration;
+  return hard ? ((battle.t - battle.phaseStartT) % 7) / 7 : battle.t / battle.duration;
 }
 // Verdict was landing as the easiest trial in the roster, so every knob
 // here got pushed up a step: rings close faster, their gap actually spins

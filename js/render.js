@@ -759,6 +759,20 @@ function activeMechanic() {
 // the arena box below them — battle.box.y is set 14px lower than it used to
 // be (see battle-core.js/erif.js) specifically to make room for this.
 const STATUS_Y = 224;
+// Every standalone fight's box (and Erif's own Reprise/Convergence phases)
+// sits at the same fixed y=249, so a flat 224 (25px above it) always lined
+// up. Enraged/Final Convergence use a much taller box that grows upward
+// from a fixed bottom edge instead (see ERIF_ENRAGE_BOX, erif.js), so its
+// own top edge moves — the flat 224 fell inside that box instead of above
+// it, landing right on top of whatever sigil/hazard was near the top
+// (this is what read as "the tip is bugged in the middle of the screen").
+// Tracks the box's own current top edge for any Erif battle instead (still
+// exactly 224 for the standard-box phases, since 249-25=224), clamped so it
+// can't creep above y=20 even once the box's own top runs off-canvas.
+function statusY() {
+  if (battle && battle.type === 'erif') return Math.max(20, battle.box.y - 25);
+  return STATUS_Y;
+}
 
 // The Reckoning (Hard-only true final phase, see erif.js) — a forearm +
 // palm + 4 fingers (1 thumb, 3 pointers, see HAND_FINGERS), oriented along
@@ -1332,7 +1346,7 @@ function drawBattle() {
   }
   if (battle.shapeZones.length) {
     const cueVerb = battle.shapeState === 'barrage' ? 'SURVIVE' : battle.shapeState === 'seek' ? 'ENTER' : 'JUDGMENT';
-    text(`${cueVerb}: ${battle.shapeCue.toUpperCase()}`, W / 2, STATUS_Y, 20, 'center', .95);
+    text(`${cueVerb}: ${battle.shapeCue.toUpperCase()}`, W / 2, statusY(), 20, 'center', .95);
   }
 
   for (const l of battle.lasers) { ctx.save(); ctx.globalAlpha = .75 + .2 * Math.sin(performance.now() / 35); ctx.fillRect(l.x, l.y, l.w, l.h); ctx.restore(); }
@@ -1343,7 +1357,7 @@ function drawBattle() {
     // however many options the current question actually has.
     const count = battle.q.a.length, lane = b.w / count;
     const fontSize = Math.max(11, 18 - (count - 4) * 1.5);
-    text(battle.q.q, W / 2, STATUS_Y, 22);
+    text(battle.q.q, W / 2, statusY(), 22);
     for (let i = 0; i < count; i++) {
       ctx.globalAlpha = .45; line(b.x + i * lane, b.y, b.x + i * lane, b.y + b.h, 1); ctx.globalAlpha = 1;
       text(battle.q.a[i], b.x + lane * (i + .5), b.y + 30, fontSize);
@@ -1403,7 +1417,7 @@ function drawBattle() {
     const label = battle.echoPhase === 'reveal' ? 'WATCH THE ARCHIVE'
       : battle.echoPhase === 'input' ? `REPEAT: STEP ${battle.echoStep + 1}/${battle.echoSequence.length}`
       : (battle.echoFail ? 'THE PAGE TEARS' : 'PATTERN HELD');
-    text(label, W / 2, STATUS_Y, 18, 'center', .9);
+    text(label, W / 2, statusY(), 18, 'center', .9);
     // The per-round safety-cap readout (see MEMORY_MATCH_ROUND_TIME,
     // bosses.js) — same top-of-arena bar convention as the Oracle's own
     // question timer above, so it drains only while the round can actually
@@ -1421,7 +1435,7 @@ function drawBattle() {
     const pct = clamp(battle.sandTimer / (battle.sandMax || 1), 0, 1);
     const fast = battle.sandPhase === 'fast';
     ctx.save(); ctx.fillStyle = fast ? EMBER : '#57c7ff';
-    text(fast ? 'THE SAND RUSHES' : 'THE SAND SLOWS', W / 2, STATUS_Y, 15, 'center', .85);
+    text(fast ? 'THE SAND RUSHES' : 'THE SAND SLOWS', W / 2, statusY(), 15, 'center', .85);
     ctx.globalAlpha = .8;
     ctx.fillRect(b.x, b.y - 10, b.w * pct, 3);
     ctx.restore();
@@ -1429,7 +1443,7 @@ function drawBattle() {
 
   if (battle.type === 'erif' && (battle.phase === PHASE_CONVERGENCE || battle.phase === PHASE_FINAL_CONVERGENCE)) {
     if (battle.convergenceCue) {
-      text(`${battle.phase === PHASE_FINAL_CONVERGENCE ? 'BREAK' : 'HOLD'}: ${battle.convergenceCue.toUpperCase()}`, W / 2, STATUS_Y, 20);
+      text(`${battle.phase === PHASE_FINAL_CONVERGENCE ? 'BREAK' : 'HOLD'}: ${battle.convergenceCue.toUpperCase()}`, W / 2, statusY(), 20);
       const pct = clamp(battle.convergenceCueTimer / battle.convergenceCueMax, 0, 1);
       ctx.fillRect(b.x, b.y - 10, b.w * pct, 3);
     } else {
@@ -1437,7 +1451,7 @@ function drawBattle() {
       // — see updateConvergence, erif.js), so it gets the same progress
       // readout Final Convergence already shows instead of a static line.
       const count = battle.phase === PHASE_FINAL_CONVERGENCE ? battle.finalCaptureCount : battle.convergenceCaptureCount;
-      text(`${count}/${REPRISE_ORDER.length} LIEUTENANTS OUTBURNED`, W / 2, STATUS_Y, 15, 'center', .72);
+      text(`${count}/${REPRISE_ORDER.length} LIEUTENANTS OUTBURNED`, W / 2, statusY(), 15, 'center', .72);
     }
   } else if (battle.type === 'erif' && battle.phase === PHASE_ENRAGED) {
     // Nothing drawn here while a quiz or memory round is actually up — those
@@ -1445,7 +1459,7 @@ function drawBattle() {
     // (see the `if (battle.q)` and `if (battle.echoSequence.length)` blocks
     // below), so showing "ALL EIGHT BRANDS..." here at the same time would
     // just overlay text on top of text.
-    if (!battle.q && !battle.echoSequence.length) text('ALL EIGHT BRANDS ARE ACTIVE', W / 2, STATUS_Y, 15, 'center', .72);
+    if (!battle.q && !battle.echoSequence.length) text('ALL EIGHT BRANDS ARE ACTIVE', W / 2, statusY(), 15, 'center', .72);
   }
 
   const mech = activeMechanic();

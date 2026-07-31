@@ -616,21 +616,27 @@ function spawnEnragedShard() {
   battle.shapes.push({ type: choose(['circle', 'triangle', 'square']), x: h.x, y: h.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, size: 7, spin: rand(-5, 5), a: 0, life: 3.4 });
   h.tx = s.x; h.ty = s.y;
 }
-// The arena widens AND grows downward once Enraged begins, and stays that
-// size through Final Convergence and the true final phase (none of which
-// ever reset battle.box) — every family hitting at once has more room to
-// spread out in. y moved way up (249 -> 30, same top margin the Reckoning's
-// own big arena already uses) instead of leaving it at 249 — at that height
-// plus the same y, the box's own bottom edge landed at 639, one pixel off
-// the canvas floor (H=640), pushing the HP/timer/phase-name row and the
-// controls legend/volume meters entirely off-screen. Moving the box up
-// (not shrinking it — w/h are unchanged) instead reopens that same ~200px
-// of room below it that every other phase already has, so all of that stays
-// visible instead of getting hidden. The header (boss icon/name normally
-// drawn above the box) is suppressed for every phase from here on now too
-// (see drawBattle, render.js) — there isn't room for both it and the box
-// at this height, and the box is what actually needs the space.
-const ERIF_ENRAGE_BOX = { x: 140, y: 30, w: 680, h: 390 };
+// The arena widens once Enraged begins, and stays that size through Final
+// Convergence and the true final phase (none of which ever reset
+// battle.box) — every family hitting at once has more room to spread out
+// in. Anchored to the exact same BOTTOM edge every other fight's standard
+// box already sits at (230,249,500,270 — see battle-core.js — bottom =
+// 249+270 = 519) rather than sharing that box's own y and just growing
+// downward from it: growing downward pushed this box's bottom edge to 639,
+// one pixel off the canvas floor (H=640), leaving no room for the
+// HP/timer/phase-name row or the controls legend/volume meters below it —
+// they all rendered off-screen. Growing upward and outward instead (this
+// box's own y = 519 - h, x/w symmetric around the same x=480 center the
+// standard box already uses) keeps that bottom edge fixed in place, so
+// everything below the box lines up exactly like it does for every other
+// fight, no matter how tall this one gets — it's fine (expected, even) for
+// the top of this box to run out of room and head off-canvas as it grows;
+// the bottom staying put is what actually matters here. The header (boss
+// icon/name normally drawn above the box) is suppressed for every phase
+// from here on (see drawBattle, render.js) since there isn't room for both
+// it and a box this tall.
+const ERIF_ENRAGE_BOX_H = 390;
+const ERIF_ENRAGE_BOX = { x: 140, y: 519 - ERIF_ENRAGE_BOX_H, w: 680, h: ERIF_ENRAGE_BOX_H };
 const ERIF_ENRAGE_BOX_GROW_TIME = 1.8;
 // The foreground focus of Enraged now alternates between math (the Oracle-
 // style question+laser mechanic) and memory (an Archivist-style sigil
@@ -767,7 +773,7 @@ function updateEnraged(dt) {
     // at least two passage gaps so the player has multiple lanes to choose.
     const enrageGapCount = Math.max(answerPassages, 2);
     spawnRing(true, battle.ringGapA, 365, battle.ringArcDirection * .04, 56, answerPassages <= 1 ? 1.0 : .42, enrageGapCount);
-    battle.enrageRingTimer = 1.63; // +25% (was 1.30) — less ring spam stacking back to back
+    battle.enrageRingTimer = 1.956; // +20% on top (was 1.63, itself +25% from 1.30) — more radial spacing between rings
   }
   battle.enrageVolleyTimer -= dt;
   if (battle.enrageVolleyTimer <= 0) {
@@ -1732,9 +1738,9 @@ function updateErif(dt) {
     // updateRepriseArchivist/updateRepriseOracle/updateRepriseHourglass
     // above). Executioner and Mask get their own shorter fixed window (5s)
     // instead of the default — the whole Reprise is meant to move fast.
-    // Gale and Verdict used to get a longer flat window (was 10s, then 8s)
-    // but that's now down to 7s too, matching REPRISE_SEGMENT exactly, so
-    // they no longer need their own special case at all.
+    // Verdict gets its own longer window again (9s, up from the shared 7s)
+    // — its normal/burst cycle (see verdictPhaseProgress, bosses.js) needs
+    // real room to actually show both halves.
     const segmentDone =
       name === 'archivist' ? battle.repriseArchivistDone :
       name === 'oracle' ? battle.repriseOracleDone :
@@ -1742,6 +1748,7 @@ function updateErif(dt) {
       name === 'witness' ? battle.repriseWitnessDone :
       battle.repriseSegElapsed >= (
         name === 'executioner' || name === 'mask' ? 5 :
+        name === 'verdict' ? 9 :
         REPRISE_SEGMENT
       );
     if (segmentDone) {
