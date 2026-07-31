@@ -91,8 +91,15 @@ const SHIELD_FACING_ANGLE = { up: -Math.PI / 2, down: Math.PI / 2, left: Math.PI
 // basically blockable," and more so with more stacks. The base tolerance
 // (no stacks) is deliberately modest — this forgives near-misses right at
 // the boundary between two sides, not a way to ignore facing entirely.
+// Named constants (rather than the bare Math.PI/10 and Math.PI/30 this used
+// to inline) because upgrades.js's card display now shows this same angle in
+// degrees — unlike the px radius bonus below, which rides on a hitRadius
+// that varies per hazard, this angle is one consistent number everywhere,
+// so it's the number the upgrade card leads with.
+const SHIELD_ANGLE_TOLERANCE_BASE = Math.PI / 12; // 15°
+const SHIELD_ANGLE_TOLERANCE_PER_STACK = Math.PI / 36; // 5°
 function shieldAngleTolerance() {
-  return Math.PI / 10 + (Math.PI / 30) * (save.upgrades.shield || 0);
+  return SHIELD_ANGLE_TOLERANCE_BASE + SHIELD_ANGLE_TOLERANCE_PER_STACK * (save.upgrades.shield || 0);
 }
 // Every blockable-hazard update loop calls this in place of a bare
 // `battle.shield === side` check — same true/false contract, just also true

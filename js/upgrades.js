@@ -54,15 +54,23 @@ function updateUpgradeChoice(dt) {
   if (tap(' ')) confirmUpgradeChoice();
 }
 
-// Formats a catalog entry's current -> next value for display. Speed/Shield
-// show the bonus delta itself (their true in-fight base varies per
-// boss/hazard, so the bonus amount is the only universally-accurate
-// number); HP/I-Frames show the real absolute stat since both have one
-// canonical base value everywhere (3 HP for any lieutenant, .75s i-frames).
+// Formats a catalog entry's current -> next value for display. Speed still
+// shows the bonus delta itself (its true in-fight base varies per
+// boss/fight, so the bonus amount is the only universally-accurate number);
+// HP/I-Frames/Shield show the real absolute stat since all three have one
+// canonical base value everywhere (3 HP for any lieutenant, 1s i-frames,
+// 15° shield angle tolerance — see SHIELD_ANGLE_TOLERANCE_BASE, hazards.js).
+// Shield's px radius bonus doesn't get its own number here since, unlike the
+// angle, it rides on a hitRadius that varies per hazard — the degrees figure
+// is the one honest headline number for this upgrade.
 function formatUpgradeValue(key, stacks) {
   const cat = UPGRADE_CATALOG[key];
   if (key === 'hp') return `${3 + cat.perStack * stacks} HP`;
-  if (key === 'iframe') return `${(.75 + cat.perStack * stacks).toFixed(2)}s`;
+  if (key === 'iframe') return `${(1 + cat.perStack * stacks).toFixed(2)}s`;
+  if (key === 'shield') {
+    const deg = (SHIELD_ANGLE_TOLERANCE_BASE + SHIELD_ANGLE_TOLERANCE_PER_STACK * stacks) * 180 / Math.PI;
+    return `${Math.round(deg)}°`;
+  }
   const amount = cat.perStack * stacks * (cat.unit === '%' ? 100 : 1);
   return `+${Math.round(amount)}${cat.unit}`;
 }

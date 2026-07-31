@@ -1335,8 +1335,8 @@ const HAND_FINGERS = [
 // Reckoning itself running longer now (135s, was 100) with more layered on
 // top of it (the mouth laser) — fewer finger-fired attacks overall so the
 // extra time reads as more fight, not more simultaneous clutter.
-const FINGER_CHARGE_TIME = 3.2;
-const FINGER_STAGGER = [0, .8, 1.6, 2.4];
+const FINGER_CHARGE_TIME = 4.0;
+const FINGER_STAGGER = [0, 1.0, 2.0, 3.0];
 // oracle/gale/verdict fire a single global effect regardless of which
 // finger triggers them (confirmed in spawnConvergenceCueHazard — none of
 // the three actually vary with target position), so they're throttled

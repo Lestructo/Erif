@@ -276,9 +276,9 @@ function resetSaveGame() {
 // than one place. `perStack`/`cap` are the tunable knobs; `costPerStack` is
 // 4 for hp (see hpProgress) and 1 for everything else.
 const UPGRADE_CATALOG = {
-  speed:  { name: 'MOVE SPEED',         perStack: .06, cap: 3, costPerStack: 1, unit: '%',  desc: 'Faster in every fight.' },
-  shield: { name: 'SHIELD FORGIVENESS', perStack: 5,   cap: 3, costPerStack: 1, unit: 'px', desc: '' },
-  iframe: { name: 'RESOLVE',            perStack: .2,  cap: 3, costPerStack: 1, unit: 's',  desc: 'Longer invulnerability after taking a hit.' },
+  speed:  { name: 'MOVE SPEED',         perStack: .05,  cap: 3, costPerStack: 1, unit: '%',  desc: 'Faster in every fight.' },
+  shield: { name: 'SHIELD FORGIVENESS', perStack: 5,    cap: 3, costPerStack: 1, unit: 'px', desc: 'Widens the angle a shield still blocks, and catches close misses just outside it.' },
+  iframe: { name: 'INVULNERABILITY',    perStack: .15,  cap: 3, costPerStack: 1, unit: 's',  desc: 'Longer invulnerability after taking a hit.' },
   hp:     { name: 'MAX HP',             perStack: 3,   cap: 1, costPerStack: 4, unit: '',   desc: 'More health to survive, everywhere — costs 4 perfect clears.' },
 };
 

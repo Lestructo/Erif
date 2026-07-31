@@ -1259,7 +1259,7 @@ function drawErifHand(hand) {
     const chargePct = clamp(f.chargeT / FINGER_CHARGE_TIME, 0, 1);
     if (hand.state === 'wandering' && chargePct > .7) {
       ctx.save(); ctx.globalAlpha = alpha * (chargePct - .7) / .3; ctx.fillStyle = EMBER;
-      ctx.beginPath(); ctx.arc(fx, fy, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(fx, fy, 6, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
   }

@@ -325,7 +325,7 @@ function hurt(n = 1) {
   if (godMode) return; // debug invulnerability — see title.js's title-menu toggle
   if (battle.hurtTimer > 0) return;
   battle.hp -= n;
-  battle.hurtTimer = .75 + UPGRADE_CATALOG.iframe.perStack * (save.upgrades.iframe || 0);
+  battle.hurtTimer = 1 + UPGRADE_CATALOG.iframe.perStack * (save.upgrades.iframe || 0);
   battle.tookDamage = true;
   tone(70, .12, 'square', .08);
   // White, not ember — this is wax breaking off the candle, not fire. Blocky
