@@ -454,10 +454,21 @@ function updateWindLines(dt) {
     w.travel += w.speed * dt;
     const p = windLineXY(w, b);
     w.x = p.x; w.y = p.y;
-    const hitRadius = s.r + 7, d = dist(p.x, p.y, s.x, s.y);
-    if (shieldFacingBlocks(p.x, p.y, w.dir)) {
+    const hitRadius = s.r + 7;
+    // Checked along the whole visible trail now, not just the current
+    // leading tip — render.js draws this as a real curving streak sampled
+    // back to travel-42 (see its own k=0..42 step-7 loop), but collision was
+    // only ever testing the single point at travel-0, so standing anywhere
+    // along the rest of the visible line was completely safe.
+    let d = Infinity, hx = p.x, hy = p.y;
+    for (let k = 0; k <= 42; k += 7) {
+      const tp = windLineXY(w, b, Math.max(0, w.travel - k));
+      const td = dist(tp.x, tp.y, s.x, s.y);
+      if (td < d) { d = td; hx = tp.x; hy = tp.y; }
+    }
+    if (shieldFacingBlocks(hx, hy, w.dir)) {
       const blockRadius = hitRadius + UPGRADE_CATALOG.shield.perStack * (save.upgrades.shield || 0);
-      if (d < blockRadius) { w.dead = true; tone(480, .05, 'square', .022); spawnSparks(p.x, p.y, 4, { color: EMBER, speed: [40, 90], life: .25 }); }
+      if (d < blockRadius) { w.dead = true; tone(480, .05, 'square', .022); spawnSparks(hx, hy, 4, { color: EMBER, speed: [40, 90], life: .25 }); }
     } else if (d < hitRadius) { w.dead = true; hurt(); }
   }
   battle.windLines = battle.windLines.filter(w => !w.dead &&
