@@ -247,10 +247,18 @@ function beginVerdictSpiral(hard = false) {
   battle.rings = [];
   battle.ringArcDirection = choose([-1, 1]);
   battle.ringSwitchTimer = hard ? rand(2.2, 3.2) : rand(3.2, 4.6);
-  battle.spawn = 0;
+  // Spawns the very first burst ring right now, much closer in (180 instead
+  // of the usual full 360) rather than leaving it to the normal per-frame
+  // cadence check below (which would spawn it a frame later at the usual
+  // full radius) — that combination (the last normal ring already closed in
+  // or gone, the first burst ring still all the way out at 360) is what
+  // read as a dead "waiting" gap right at the transition. Later burst rings
+  // spawn at the usual full radius via the normal cadence.
+  spawnVerdictContinuousRing(hard, 180);
+  battle.spawn = hard ? .10 : .13; // this phase's normal opening cadence (phase=0), so the next ring lands on schedule
   tone(hard ? 235 : 210, .10, 'triangle', .035);
 }
-function spawnVerdictContinuousRing(hard = false) {
+function spawnVerdictContinuousRing(hard = false, startRadius = 360) {
   const phase = clamp((verdictPhaseProgress(hard) - .5) / .5, 0, 1);
   if (battle.ringGapA == null) battle.ringGapA = rand(0, Math.PI * 2);
   // Normal's own numbers nudged a step tighter (was .10-.135/.035/175/.5) —
@@ -259,7 +267,7 @@ function spawnVerdictContinuousRing(hard = false) {
   const step = lerp(hard ? .125 : .11, hard ? .16 : .145, phase);
   battle.ringGapA += battle.ringArcDirection * step;
   const tinyWobble = Math.sin(battle.t * (hard ? 2.3 : 1.8)) * .012;
-  spawnRing(hard, battle.ringGapA + tinyWobble, 360, battle.ringArcDirection * (hard ? .05 : .04), hard ? 205 : 188, hard ? .37 : .44);
+  spawnRing(hard, battle.ringGapA + tinyWobble, startRadius, battle.ringArcDirection * (hard ? .05 : .04), hard ? 205 : 188, hard ? .37 : .44);
 }
 // moveFn lets a caller swap in moveSoulWithShield instead of the standalone
 // trial's own moveSoulFree — Erif's Reprise segment (see erif.js) needs the

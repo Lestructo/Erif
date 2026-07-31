@@ -682,10 +682,13 @@ const ERIF_ENRAGE_MINIGAME_PLAN = [
 // player into Final Convergence far earlier than intended (and well before
 // the Enraged dialogue's own 80s-remaining music sync had anything to line
 // up against). ENRAGE_MIN_DURATION floors how early that transition can
-// actually fire — enforced by stretching the plan's own final question
-// (always a math segment — see ERIF_ENRAGE_MINIGAME_PLAN) rather than
-// inserting extra bonus rounds after the fact, see its own qMax below.
-const ENRAGE_MIN_DURATION = 40;
+// actually fire — enforced by stretching the plan's remaining math
+// questions (see their own qMax math below) rather than inserting extra
+// bonus rounds after the fact. Dropped from 40 — that was catching even
+// ordinary, non-blitzed play (typical pace apparently runs under 40 on its
+// own) and over-stretching questions that didn't need it; this is meant to
+// only kick in for a genuinely fast clear.
+const ENRAGE_MIN_DURATION = 25;
 function advanceEnrageSegment() {
   battle.enrageSegmentIndex++;
   if (battle.enrageSegmentIndex >= ERIF_ENRAGE_MINIGAME_PLAN.length) { startErifFinalConvergence(); return true; }
@@ -1031,6 +1034,14 @@ function beginErifVictory() {
   battle.victoryDialogueIndex = 0;
   battle.victoryRevealCount = 0;
   battle.convergenceCue = null;
+  // Winning in the whole-fight timer's own last 5s (see ERIF_FIGHT_TIME_LIMIT,
+  // updateErif) leaves musicFadeMult already partway faded and
+  // erifFightFadeT already partway to a full white-out — without resetting
+  // both here, this victory's own fade-in picks up from wherever that left
+  // off instead of a clean, full-volume start, reading as the music/white
+  // flash briefly fighting itself right as the win lands.
+  musicFadeMult = 1;
+  battle.erifFightFadeT = 0;
   mode = 'erifVictory';
   tone(31, .8, 'sawtooth', .09);
 }
@@ -1714,6 +1725,13 @@ function beginErifTrueVictory() {
   battle.trueVictoryStarted = true;
   battle.trueVictoryT = 0;
   battle.trueVictoryDialogueIndex = 0;
+  // Same reset as beginErifVictory, for the same reason — winning in the
+  // Reckoning's own hard 100s timer's last 5s (see RECKONING_TIME_LIMIT,
+  // updateErifHandsFinale) leaves musicFadeMult/erifReckoningFadeT already
+  // partway faded, which would otherwise carry straight into this victory's
+  // own fade-in instead of starting clean.
+  musicFadeMult = 1;
+  battle.erifReckoningFadeT = 0;
   mode = 'erifTrueVictory';
   tone(28, .9, 'sawtooth', .1);
 }

@@ -972,9 +972,12 @@ function drawFinalConvergenceErifPresence() {
   drawBossIcon('erif', W / 2 + Math.sin(driftT) * 260, 300 + Math.cos(driftT * .7) * 90, true, .85);
   // Each hand wanders within its own side's margin outside the box (the box
   // spans x=140 to 820 here — see ERIF_ENRAGE_BOX, erif.js — leaving a
-  // 140px-wide strip on either side), never crossing into it.
-  drawErifFloatingHand(70 + Math.sin(t * .17) * 45, H / 2 + Math.sin(t * .13) * 240, Math.sin(t * .09) * .5);
-  drawErifFloatingHand(W - 70 + Math.sin(t * .15 + 2) * 45, H / 2 + Math.sin(t * .11 + 3) * 240, Math.PI + Math.sin(t * .1 + 1) * .5);
+  // 140px-wide strip on either side), never crossing into it. Drift speed
+  // 25% faster than the original pass (.17/.13/.15/.11 -> .2125/.1625/
+  // .1875/.1375), plus a slow continuous rotation on top of the existing
+  // wobble instead of just easing back and forth in place.
+  drawErifFloatingHand(70 + Math.sin(t * .2125) * 45, H / 2 + Math.sin(t * .1625) * 240, Math.sin(t * .1125) * .5 + t * .05);
+  drawErifFloatingHand(W - 70 + Math.sin(t * .1875 + 2) * 45, H / 2 + Math.sin(t * .1375 + 3) * 240, Math.PI + Math.sin(t * .125 + 1) * .5 - t * .04);
 }
 function drawBattle() {
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.strokeStyle = '#fff'; ctx.fillStyle = '#fff';
