@@ -133,7 +133,10 @@ function updateHourglassOrbs(dt) {
 // more often than before, to actually fill the room the spears left behind.
 function updateHourglass(dt, hard = false) {
   moveSoulFree(dt, hard ? 220 : 200);
-  if (!battle.sandPhase) beginSandPhase(hard, 'slow');
+  // Starts fast now (was slow) — the alternation below still just flips
+  // slow/fast each time, so this makes the opening sequence read fast, slow,
+  // fast, slow... instead of slow, fast, slow, fast...
+  if (!battle.sandPhase) beginSandPhase(hard, 'fast');
 
   battle.sandTimer -= dt;
   if (battle.sandTimer <= 0) beginSandPhase(hard, battle.sandPhase === 'slow' ? 'fast' : 'slow');
@@ -192,7 +195,12 @@ function spawnVerdictRing(hard = false) {
   // how wide any single ring's own opening is. Matching this ring's drift
   // to the leftover ring's actual current drift (instead of the normal
   // fixed rate) keeps the two moving in lockstep instead of diverging.
-  let drift = hard ? 1.2 : .85;
+  // Randomized per ring now (was a fixed 1.2/.85 for every single one) —
+  // with every ring spinning its gap at exactly the same rate, the whole
+  // wall of rings behaved like one smooth, predictable rotating tunnel.
+  // Varying both speed and direction ring-to-ring means each one actually
+  // has to be read on its own, not just followed once.
+  let drift = (hard ? 1.2 : .85) * rand(.6, 1.5) * choose([-1, 1]);
   if (battle.verdictJustExitedBurst) {
     if (lastRing) drift = lastRing.drift;
     battle.verdictJustExitedBurst = false;
@@ -338,17 +346,20 @@ function updateGaleFlags(dt) {
 // as streaks of wind rather than launched steel. Each carries its own
 // countdown before actually crossing the box, same shrinking-telegraph
 // convention as everything else in this game.
-// allowExtra: rolls a chance to queue 1-3 bonus rows from a different side,
-// each arriving further spaced out from the last (see updateWindLines,
-// which ticks the queue) — centralized here so every caller (the
-// standalone/Reprise fight's own cadence, Convergence/Final Convergence's
-// one-shot cue, Enraged's and the Reckoning's one-shot gusts) gets the same
-// chance for free, rather than needing each call site to remember to roll it
-// separately. Extras spawn with allowExtra=false so one bonus row can't
-// itself chain into more, and a new roll only happens once any previous
-// batch has fully finished (queue back at 0) — without that guard, a fresh
-// main-cadence roll landing mid-batch could effectively stack past 3.
-function spawnWindRow(hard = false, dirOverride = null, allowExtra = true) {
+// allowExtra: rolls a chance to queue 1-3 bonus SMALL waves (1-3 lines each,
+// vs. a regular wave's 4-7) from a different side, each arriving further
+// spaced out from the last (see updateWindLines, which ticks the queue) —
+// centralized here so every caller (the standalone/Reprise fight's own
+// cadence, Convergence/Final Convergence's one-shot cue, Enraged's and the
+// Reckoning's one-shot gusts) gets the same chance for free, rather than
+// needing each call site to remember to roll it separately. Extras spawn
+// with allowExtra=false so one bonus wave can't itself chain into more, and
+// a new roll only happens once any previous batch has fully finished (queue
+// back at 0) — without that guard, a fresh main-cadence roll landing
+// mid-batch could effectively stack past 3.
+// small: this row is a small wave (1-3 lines) instead of a regular one (4-7)
+// — set true for extras, left false for the regular cadence.
+function spawnWindRow(hard = false, dirOverride = null, allowExtra = true, small = false) {
   // A hard global floor: no two wind-row spawns, from ANY source (main
   // cadence, a queued extra, a gust-synced one-shot), can land within 1s of
   // each other — without this, an extra's own spacing could still coincide
@@ -358,9 +369,10 @@ function spawnWindRow(hard = false, dirOverride = null, allowExtra = true) {
   battle.windRowLastSpawnT = battle.t;
   const b = battle.box, dir = dirOverride || battle.galeWindDir || choose(['up', 'down', 'left', 'right']);
   const axisLen = (dir === 'up' || dir === 'down') ? b.w : b.h;
-  // Varies row to row now (was a fixed 5, or 6 on hard) — 4/5/6 normally,
-  // 5/6/7 on hard, so a row isn't always the same width to read at a glance.
-  const count = choose(hard ? [5, 6, 7] : [4, 5, 6]);
+  // Varies row to row now (was a fixed 5, or 6 on hard) — a regular wave is
+  // 4/5/6 normally, 5/6/7 on hard, so it isn't always the same width to read
+  // at a glance; a small wave is always just 1/2/3.
+  const count = small ? choose([1, 2, 3]) : choose(hard ? [5, 6, 7] : [4, 5, 6]);
   const spacing = axisLen / (count + 1);
   // 25% slower (300/245 -> 225/183.75).
   const speed = (hard ? 300 : 245) * .75 * DIFFICULTY.projectileMult;
@@ -375,15 +387,16 @@ function spawnWindRow(hard = false, dirOverride = null, allowExtra = true) {
     });
   }
   tone(210, .08, 'sine', .025);
-  // Chance raised well up (was .4/.3) — the goal is reliably visible
-  // pressure from another side, not a coin flip that could just never come
-  // up in a short window; the 1s global floor and the extras' own 3-4.5s
-  // spacing (between each other, once queued — see updateWindLines) are
-  // what actually keep it from overwhelming the player. This very first one
-  // fires much sooner than that (1-1.5s, not 3-4.5s) — Erif's Reprise
-  // segment is only 7s long, and at 3-4.5s the "different side" pressure
-  // was routinely never showing up inside the segment at all.
-  if (allowExtra && battle.windRowExtraQueue <= 0 && Math.random() < (hard ? .8 : .7)) {
+  // Chance raised well up (was .4/.3) so the "different side" pressure
+  // reliably shows up rather than being a coin flip that could just never
+  // land in a short window. On its own that made a new batch re-roll again
+  // almost immediately every time the last one finished, reading as a
+  // constant stream instead of an occasional 1-3-row burst — so a real
+  // batch-to-batch cooldown (windRowExtraCooldown, set once a batch fully
+  // drains — see updateWindLines) is what actually caps how often a new
+  // batch can start at all; this chance and the 1s global floor only govern
+  // whether one starts once that cooldown's clear.
+  if (allowExtra && battle.windRowExtraQueue <= 0 && battle.windRowExtraCooldown <= 0 && Math.random() < (hard ? .8 : .7)) {
     battle.windRowExtraHard = hard;
     battle.windRowExtraDir = dir;
     battle.windRowExtraQueue = Math.floor(rand(1, 4));
@@ -407,16 +420,21 @@ function updateWindLines(dt) {
   // Ticks any bonus rows queued up by spawnWindRow's own chance roll — lives
   // here (not in updateGale) so it's active in every context that ever
   // calls spawnWindRow, not just the standalone/Reprise fight's own loop.
+  battle.windRowExtraCooldown = Math.max(0, battle.windRowExtraCooldown - dt);
   if (battle.windRowExtraQueue > 0) {
     battle.windRowExtraTimer -= dt;
     if (battle.windRowExtraTimer <= 0) {
       const otherDirs = ['up', 'down', 'left', 'right'].filter(d => d !== battle.windRowExtraDir);
       const before = battle.windRowLastSpawnT;
-      spawnWindRow(battle.windRowExtraHard, choose(otherDirs), false);
+      spawnWindRow(battle.windRowExtraHard, choose(otherDirs), false, true); // small wave (1-3), different side
       if (battle.windRowLastSpawnT !== before) {
         // Actually spawned.
         battle.windRowExtraQueue--;
         battle.windRowExtraTimer = rand(3, 4.5);
+        // The batch just fully finished — lock out a new roll for a while
+        // so the next one reads as its own distinct burst later, not an
+        // immediate back-to-back restart.
+        if (battle.windRowExtraQueue <= 0) battle.windRowExtraCooldown = rand(6, 10);
       } else {
         // Blocked by spawnWindRow's own 1s global floor (an unrelated main-
         // cadence row landed too recently) — without this branch, the queue

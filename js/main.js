@@ -76,6 +76,11 @@ function update(dt) {
     // instead of waiting on the player like every other dialogue does
     // (including the one leading into the fight itself, which is unchanged).
     if (dialogue && dialogue.after === 'erifEnraged') {
+      // battle.t only ever advances inside updateBattle (mode === 'battle'),
+      // which this dialogue isn't — without this it'd sit frozen for the
+      // whole cutscene, handing the whole-fight timer (ERIF_FIGHT_TIME_LIMIT,
+      // erif.js) a free pause it isn't supposed to get.
+      if (battle) battle.t += dt;
       const len = dialogue.lines[dialogue.index].length;
       if ((dialogue.revealCount || 0) >= len) {
         dialogue.holdTimer = (dialogue.holdTimer ?? DIALOGUE_AUTO_HOLD) - dt;

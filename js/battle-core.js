@@ -170,6 +170,7 @@ function makeBattle(type) {
     windRowExtraTimer: 0,
     windRowExtraHard: false,
     windRowExtraDir: null,
+    windRowExtraCooldown: 0, // blocks a new extras batch from starting until a finished one has had a break — see updateWindLines/spawnWindRow
     windRowLastSpawnT: null, // battle.t of the most recent wind-row spawn from any source — enforces the 1s global floor between them
     // Erif's Convergence / Enraged / Final Convergence (phases 7-9)
     phaseStartT: 0,

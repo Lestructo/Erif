@@ -182,16 +182,16 @@ function updateRepriseArchivist(dt) {
 // The Hourglass's Reprise segment runs its own fixed 4-phase-cycle gate
 // (fast, slow, fast, slow — starting fast, unlike the standalone trial which
 // always opens slow) instead of a flat timer, so the slow/fast flip and the
-// orbs it spawns get guaranteed room to actually show up. Runs just once
-// each way now (slow, then fast) instead of 4 cycles — the very start of
-// the fight is meant to move fast, not linger here.
+// orbs it spawns get guaranteed room to actually show up. Runs fast, slow,
+// then done (was fast, slow, fast) — 2 cycles starting fast, the trailing
+// 3rd (fast) cycle cut off.
 function updateRepriseHourglass(dt) {
   moveSoulWithShield(dt, 220); // see updateArchivistQuickMatch's note on why Erif's Reprise segments keep the shield live
-  if (!battle.sandPhase) { beginSandPhase(true, 'slow'); battle.repriseHourglassCycles = 1; }
+  if (!battle.sandPhase) { beginSandPhase(true, 'fast'); battle.repriseHourglassCycles = 1; }
 
   battle.sandTimer -= dt;
   if (battle.sandTimer <= 0) {
-    // Checked BEFORE flipping — this lets the 2nd (fast) phase run its own
+    // Checked BEFORE flipping — this lets the 2nd (slow) phase run its own
     // full natural duration before ending, instead of marking done the
     // instant it begins (which would cut it down to ~0 length).
     if (battle.repriseHourglassCycles >= 2) { battle.repriseHourglassDone = true; return; }
