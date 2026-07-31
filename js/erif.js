@@ -246,7 +246,7 @@ function updateRepriseOracle(dt) {
   if (battle.spawn <= 0) {
     const b = battle.box;
     const x = rand(b.x + 10, b.x + b.w - 10);
-    battle.bullets.push({ x, y: b.y - 8, vx: rand(-55, 55) * DIFFICULTY.projectileMult, vy: 275 * DIFFICULTY.projectileMult, r: 5 });
+    battle.bullets.push({ x, y: b.y - 9.6, vx: rand(-55, 55) * DIFFICULTY.projectileMult, vy: 275 * DIFFICULTY.projectileMult, r: 5 });
     battle.spawn = .19;
   }
   for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (circleHit(p, p.r)) hurt(); }
@@ -371,11 +371,12 @@ function updateConvergenceMarks(dt) {
 }
 function spawnConvergenceAimedBullet() {
   const b = battle.box, s = battle.soul, edge = (Math.random() * 4) | 0;
+  // 20% further out (14 -> 16.8) — no telegraph before it's live.
   let x, y;
-  if (edge === 0) { x = rand(b.x, b.x + b.w); y = b.y - 14; }
-  else if (edge === 1) { x = b.x + b.w + 14; y = rand(b.y, b.y + b.h); }
-  else if (edge === 2) { x = rand(b.x, b.x + b.w); y = b.y + b.h + 14; }
-  else { x = b.x - 14; y = rand(b.y, b.y + b.h); }
+  if (edge === 0) { x = rand(b.x, b.x + b.w); y = b.y - 16.8; }
+  else if (edge === 1) { x = b.x + b.w + 16.8; y = rand(b.y, b.y + b.h); }
+  else if (edge === 2) { x = rand(b.x, b.x + b.w); y = b.y + b.h + 16.8; }
+  else { x = b.x - 16.8; y = rand(b.y, b.y + b.h); }
   const a = Math.atan2(s.y - y, s.x - x) + rand(-.13, .13), speed = 160 * DIFFICULTY.projectileMult;
   battle.aimedBullets.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: 4 });
 }
@@ -448,7 +449,8 @@ function spawnConvergenceCueHazard(cue, target) {
     }
     spawnWindRow(false);
   } else if (cue === 'witness') {
-    const anchors = [[box.x - 24, box.y + 35], [box.x + box.w + 24, box.y + 70], [box.x + 60, box.y - 24], [box.x + box.w - 60, box.y + box.h + 24]];
+    // 20% further out (24 -> 28.8) — no telegraph before it's live.
+    const anchors = [[box.x - 28.8, box.y + 35], [box.x + box.w + 28.8, box.y + 70], [box.x + 60, box.y - 28.8], [box.x + box.w - 60, box.y + box.h + 28.8]];
     anchors.forEach((a, i) => {
       const tx = lerp(battle.soul.x, target.x, .45) + rand(-35, 35), ty = lerp(battle.soul.y, target.y, .45) + rand(-35, 35);
       const ang = Math.atan2(ty - a[1], tx - a[0]);
@@ -567,7 +569,7 @@ function updateConvergence(dt) {
   if (battle.inkTimer > 0) {
     battle.inkTimer -= dt; battle.inkSpawn -= dt;
     if (battle.inkSpawn <= 0) {
-      battle.bullets.push({ x: rand(battle.box.x + 10, battle.box.x + battle.box.w - 10), y: battle.box.y - 8, vx: rand(-45, 45) * DIFFICULTY.projectileMult, vy: 235 * DIFFICULTY.projectileMult, r: 5 });
+      battle.bullets.push({ x: rand(battle.box.x + 10, battle.box.x + battle.box.w - 10), y: battle.box.y - 9.6, vx: rand(-45, 45) * DIFFICULTY.projectileMult, vy: 235 * DIFFICULTY.projectileMult, r: 5 });
       battle.inkSpawn = .17;
     }
   }
@@ -671,7 +673,11 @@ function updateOneShotGaleGust(dt, hard, usedField, timerField, requireGaleCue =
   if (battle[usedField]) return;
   if (!battle.galeGustPhase) {
     if (requireGaleCue && battle.convergenceCue !== 'gale') { battle[timerField] = null; return; }
-    battle[timerField] = (battle[timerField] ?? (requireGaleCue ? rand(.4, 1.4) : rand(12, 22))) - dt;
+    // Enraged's own delay cut way down (was rand(12,22)) — that could leave
+    // the phase's one gust (and its gust-synced wind row) not showing up
+    // until very late, or not being seen at all if the segment plan wrapped
+    // up first.
+    battle[timerField] = (battle[timerField] ?? (requireGaleCue ? rand(.4, 1.4) : rand(3, 6))) - dt;
     if (battle[timerField] <= 0) beginGaleGust(hard);
     return;
   }
@@ -940,7 +946,7 @@ function updateFinalConvergence(dt) {
   if (battle.inkTimer > 0) {
     battle.inkTimer -= dt; battle.inkSpawn -= dt;
     if (battle.inkSpawn <= 0) {
-      battle.bullets.push({ x: rand(battle.box.x + 10, battle.box.x + battle.box.w - 10), y: battle.box.y - 8, vx: rand(-40, 40) * DIFFICULTY.projectileMult, vy: 225 * DIFFICULTY.projectileMult, r: 5 });
+      battle.bullets.push({ x: rand(battle.box.x + 10, battle.box.x + battle.box.w - 10), y: battle.box.y - 9.6, vx: rand(-40, 40) * DIFFICULTY.projectileMult, vy: 225 * DIFFICULTY.projectileMult, r: 5 });
       battle.inkSpawn = .14; // was .19 — denser now that inkTimer itself also runs longer (see spawnConvergenceCueHazard's oracle branch)
     }
   }
@@ -1552,7 +1558,7 @@ function updateErifHandHazards(dt) {
   if (battle.inkTimer > 0) {
     battle.inkTimer -= dt; battle.inkSpawn -= dt;
     if (battle.inkSpawn <= 0) {
-      battle.bullets.push({ x: rand(battle.box.x + 10, battle.box.x + battle.box.w - 10), y: battle.box.y - 8, vx: rand(-45, 45) * DIFFICULTY.projectileMult, vy: 235 * DIFFICULTY.projectileMult, r: 5 });
+      battle.bullets.push({ x: rand(battle.box.x + 10, battle.box.x + battle.box.w - 10), y: battle.box.y - 9.6, vx: rand(-45, 45) * DIFFICULTY.projectileMult, vy: 235 * DIFFICULTY.projectileMult, r: 5 });
       battle.inkSpawn = .17;
     }
   }

@@ -35,6 +35,7 @@ function makeBattle(type) {
     ringArcDirection: choose([-1, 1]),
     ringArcMode: false,
     ringSwitchTimer: 0,
+    verdictJustExitedBurst: false, // consumed once by the next spawnVerdictRing to widen that one transition ring (bosses.js)
     // Executioner / Mask (spear + shield)
     lastSpearSide: null,
     needleTimer: .55,
@@ -164,7 +165,7 @@ function makeBattle(type) {
     galeFlags: [],
     galeFlagTimer: 1.5,
     windLines: [],
-    windRowTimer: 2.2,
+    windRowTimer: .5, // was 2.2 — the first row took noticeably long to show up once a Gale-driven phase actually started
     windRowExtraQueue: 0, // remaining bonus rows (from a different side) queued up after a chance roll
     windRowExtraTimer: 0,
     windRowExtraHard: false,
@@ -324,7 +325,7 @@ function clearHazards() {
   battle.galeWindDir = null; battle.galeGustPhase = null; battle.galeGustTimer = 0; battle.galeGustMax = 0;
   battle.galeGustCooldown = 0; battle.controlsInverted = false; battle.windVX = 0; battle.windVY = 0;
   battle.galeFlags = []; battle.galeFlagTimer = 1.5;
-  battle.windLines = []; battle.windRowTimer = 2.2;
+  battle.windLines = []; battle.windRowTimer = .5;
   battle.windRowExtraQueue = 0; battle.windRowExtraTimer = 0;
   // Convergence/Enraged/Final Convergence hazards and per-cue timers reset on
   // every phase boundary; the lifetime flags (enraged, finalConvergence,
@@ -382,7 +383,7 @@ function clearHazardsKeepProjectiles() {
   battle.galeWindDir = null; battle.galeGustPhase = null; battle.galeGustTimer = 0; battle.galeGustMax = 0;
   battle.galeGustCooldown = 0; battle.controlsInverted = false; battle.windVX = 0; battle.windVY = 0;
   battle.galeFlagTimer = 1.5;
-  battle.windRowTimer = 2.2;
+  battle.windRowTimer = .5;
   battle.windRowExtraQueue = 0; battle.windRowExtraTimer = 0;
 }
 

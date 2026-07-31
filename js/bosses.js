@@ -27,7 +27,8 @@ function spawnSandGrain(hard = false) {
   // least 3x bigger on top of that — slow enough to actually be worth
   // making a bigger, more deliberate telegraph out of.
   const slowMult = battle.sandPhase === 'slow' ? 3 : 1;
-  battle.sandGrains.push({ x, y: b.y - 12, vy: speed, r: rand(6, 18) * slowMult });
+  // 20% further out (12 -> 14.4) — no telegraph before it's live.
+  battle.sandGrains.push({ x, y: b.y - 14.4, vy: speed, r: rand(6, 18) * slowMult });
   tone(320, .04, 'square', .015);
 }
 function updateSandGrains(dt) {
@@ -52,11 +53,12 @@ function updateSandGrains(dt) {
 // up or slows down the instant the phase flips, not just new ones.
 function spawnHourglassOrb(hard = false) {
   const b = battle.box, edge = (Math.random() * 4) | 0;
+  // 20% further out (24 -> 28.8) — no telegraph before it's live.
   let x, y;
-  if (edge === 0) { x = rand(b.x + 20, b.x + b.w - 20); y = b.y - 24; }
-  else if (edge === 1) { x = b.x + b.w + 24; y = rand(b.y + 20, b.y + b.h - 20); }
-  else if (edge === 2) { x = rand(b.x + 20, b.x + b.w - 20); y = b.y + b.h + 24; }
-  else { x = b.x - 24; y = rand(b.y + 20, b.y + b.h - 20); }
+  if (edge === 0) { x = rand(b.x + 20, b.x + b.w - 20); y = b.y - 28.8; }
+  else if (edge === 1) { x = b.x + b.w + 28.8; y = rand(b.y + 20, b.y + b.h - 20); }
+  else if (edge === 2) { x = rand(b.x + 20, b.x + b.w - 20); y = b.y + b.h + 28.8; }
+  else { x = b.x - 28.8; y = rand(b.y + 20, b.y + b.h - 20); }
   const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
   const heading = Math.atan2(cy - y, cx - x) + rand(-.6, .6);
   const speed = (hard ? 44 : 34) * DIFFICULTY.projectileMult;
@@ -178,7 +180,24 @@ function spawnVerdictRing(hard = false) {
   // whatever burst ring is still mid-flight.
   const lastRing = battle.rings[battle.rings.length - 1];
   const gapA = lastRing ? lastRing.gapA : rand(0, Math.PI * 2);
-  spawnRing(hard, gapA, 360, hard ? 1.2 : .85, hard ? 185 : 145, hard ? .36 : .52);
+  const opening = hard ? .36 : .52;
+  // Doubling the opening on this one ring (a previous attempt at this fix)
+  // didn't actually address the real problem and made the transition worse:
+  // normal rings drift at a fixed 1.2/.85 rad/s, while leftover burst rings
+  // drift much slower (~.05/.035 rad/s) — so even with the gap aligned at
+  // the moment of this spawn, the two immediately race apart again within a
+  // fraction of a second, opening a *second*, unrelated gap. With enough
+  // rings alive at once that can leave no angle safe against all of them
+  // simultaneously — which reads as "impossible to dodge," regardless of
+  // how wide any single ring's own opening is. Matching this ring's drift
+  // to the leftover ring's actual current drift (instead of the normal
+  // fixed rate) keeps the two moving in lockstep instead of diverging.
+  let drift = hard ? 1.2 : .85;
+  if (battle.verdictJustExitedBurst) {
+    if (lastRing) drift = lastRing.drift;
+    battle.verdictJustExitedBurst = false;
+  }
+  spawnRing(hard, gapA, 360, drift, hard ? 185 : 145, opening);
   tone(180, .03, 'sine', .025);
 }
 function beginVerdictSpiral(hard = false) {
@@ -219,7 +238,13 @@ function updateVerdict(dt, hard = false, moveFn = moveSoulFree) {
   // into rotating mode ever got beginVerdictSpiral's gap-alignment fix —
   // every later re-entry silently skipped it, back to an unaligned random
   // gap.
-  if (!rotating) battle.ringArcMode = false;
+  if (!rotating) {
+    // Catches the exact frame rotating flips off — consumed once by the
+    // very next spawnVerdictRing call to widen that one transition ring's
+    // opening (see spawnVerdictRing).
+    if (battle.ringArcMode) battle.verdictJustExitedBurst = true;
+    battle.ringArcMode = false;
+  }
   if (rotating) {
     battle.ringSwitchTimer -= dt;
     if (battle.ringSwitchTimer <= 0) {
@@ -267,11 +292,13 @@ function velocityToSide(vx, vy) {
 // from.
 function spawnGaleFlag(hard = false) {
   const b = battle.box, dir = battle.galeWindDir || choose(['up', 'down', 'left', 'right']);
+  // 20% further out (26 -> 31.2) — more read time before it's live, no
+  // in-box telegraph like this one has.
   let x, y;
-  if (dir === 'up') { x = rand(b.x + 20, b.x + b.w - 20); y = b.y - 26; }
-  else if (dir === 'down') { x = rand(b.x + 20, b.x + b.w - 20); y = b.y + b.h + 26; }
-  else if (dir === 'left') { x = b.x - 26; y = rand(b.y + 20, b.y + b.h - 20); }
-  else { x = b.x + b.w + 26; y = rand(b.y + 20, b.y + b.h - 20); }
+  if (dir === 'up') { x = rand(b.x + 20, b.x + b.w - 20); y = b.y - 31.2; }
+  else if (dir === 'down') { x = rand(b.x + 20, b.x + b.w - 20); y = b.y + b.h + 31.2; }
+  else if (dir === 'left') { x = b.x - 31.2; y = rand(b.y + 20, b.y + b.h - 20); }
+  else { x = b.x + b.w + 31.2; y = rand(b.y + 20, b.y + b.h - 20); }
   const speed = (hard ? 76 : 58) * DIFFICULTY.projectileMult;
   const a = Math.atan2(battle.soul.y - y, battle.soul.x - x);
   battle.galeFlags.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, speed, r: 9, wave: rand(0, Math.PI * 2) });
@@ -340,7 +367,11 @@ function spawnWindRow(hard = false, dirOverride = null, allowExtra = true) {
     });
   }
   tone(210, .08, 'sine', .025);
-  if (allowExtra && battle.windRowExtraQueue <= 0 && Math.random() < (hard ? .4 : .3)) {
+  // Chance raised well up (was .4/.3) — the goal is reliably visible
+  // pressure from another side, not a coin flip that could just never come
+  // up in a short window; the 1s global floor and the extras' own 3-4.5s
+  // spacing above are what actually keep it from overwhelming the player.
+  if (allowExtra && battle.windRowExtraQueue <= 0 && Math.random() < (hard ? .8 : .7)) {
     battle.windRowExtraHard = hard;
     battle.windRowExtraDir = dir;
     battle.windRowExtraQueue = Math.floor(rand(1, 4));
@@ -353,10 +384,11 @@ function spawnWindRow(hard = false, dirOverride = null, allowExtra = true) {
 function windLineXY(w, b, travelOverride) {
   const travel = travelOverride ?? w.travel;
   const wig = Math.sin(travel * .05 + w.wavePhase) * w.waveAmp;
-  if (w.dir === 'up') return { x: b.x + w.pos + wig, y: b.y - 20 + travel };
-  if (w.dir === 'down') return { x: b.x + w.pos + wig, y: b.y + b.h + 20 - travel };
-  if (w.dir === 'left') return { x: b.x - 20 + travel, y: b.y + w.pos + wig };
-  return { x: b.x + b.w + 20 - travel, y: b.y + w.pos + wig };
+  // 20% further out (20 -> 24) — same reasoning as the other edge-spawns.
+  if (w.dir === 'up') return { x: b.x + w.pos + wig, y: b.y - 24 + travel };
+  if (w.dir === 'down') return { x: b.x + w.pos + wig, y: b.y + b.h + 24 - travel };
+  if (w.dir === 'left') return { x: b.x - 24 + travel, y: b.y + w.pos + wig };
+  return { x: b.x + b.w + 24 - travel, y: b.y + w.pos + wig };
 }
 function updateWindLines(dt) {
   const b = battle.box, s = battle.soul;
@@ -367,9 +399,20 @@ function updateWindLines(dt) {
     battle.windRowExtraTimer -= dt;
     if (battle.windRowExtraTimer <= 0) {
       const otherDirs = ['up', 'down', 'left', 'right'].filter(d => d !== battle.windRowExtraDir);
+      const before = battle.windRowLastSpawnT;
       spawnWindRow(battle.windRowExtraHard, choose(otherDirs), false);
-      battle.windRowExtraQueue--;
-      battle.windRowExtraTimer = rand(3, 4.5);
+      if (battle.windRowLastSpawnT !== before) {
+        // Actually spawned.
+        battle.windRowExtraQueue--;
+        battle.windRowExtraTimer = rand(3, 4.5);
+      } else {
+        // Blocked by spawnWindRow's own 1s global floor (an unrelated main-
+        // cadence row landed too recently) — without this branch, the queue
+        // still decremented here regardless, silently burning through the
+        // whole 1-3 batch without ever actually spawning any of it. Retry
+        // shortly instead of losing it.
+        battle.windRowExtraTimer = 1.1;
+      }
     }
   }
   for (const w of battle.windLines) {
@@ -573,11 +616,14 @@ function startShapePattern(hard = false) {
   battle.spawn = hard ? .12 : .16;
 
   const unsafe = battle.shapeZones.filter(z => z.type !== battle.shapeCue);
+  // Hand anchors pushed 20% further out too (38/28/32/30/25 -> 45.6/33.6/
+  // 38.4/36/30) — shards are thrown from these, so more distance out here
+  // is more travel time (and read time) before one actually reaches you.
   const anchors = [
-    [b.x + 38, b.y - 28], [b.x + b.w * .37, b.y - 32], [b.x + b.w * .63, b.y - 32], [b.x + b.w - 38, b.y - 28],
-    [b.x - 30, b.y + b.h * .52], [b.x + b.w + 30, b.y + b.h * .52],
+    [b.x + 45.6, b.y - 33.6], [b.x + b.w * .37, b.y - 38.4], [b.x + b.w * .63, b.y - 38.4], [b.x + b.w - 45.6, b.y - 33.6],
+    [b.x - 36, b.y + b.h * .52], [b.x + b.w + 36, b.y + b.h * .52],
   ];
-  if (hard) { anchors.push([b.x - 25, b.y + b.h * .82], [b.x + b.w + 25, b.y + b.h * .82]); }
+  if (hard) { anchors.push([b.x - 30, b.y + b.h * .82], [b.x + b.w + 30, b.y + b.h * .82]); }
 
   if (!battle.hands.length) {
     battle.hands = anchors.map((a, i) => { const z = unsafe[i % unsafe.length]; return makeHand(a[0], a[1], z.x, z.y); });
@@ -662,7 +708,8 @@ function updateOracle(dt, hard = false) {
   if (battle.spawn <= 0) {
     const b = battle.box;
     const x = rand(b.x + 10, b.x + b.w - 10);
-    battle.bullets.push({ x, y: b.y - 8, vx: (hard ? rand(-55, 55) : rand(-18, 18)) * DIFFICULTY.projectileMult, vy: (hard ? 275 : 215) * DIFFICULTY.projectileMult, r: 5 });
+    // 20% further out (8 -> 9.6) — no telegraph before it's live.
+    battle.bullets.push({ x, y: b.y - 9.6, vx: (hard ? rand(-55, 55) : rand(-18, 18)) * DIFFICULTY.projectileMult, vy: (hard ? 275 : 215) * DIFFICULTY.projectileMult, r: 5 });
     battle.spawn = hard ? .19 : .31;
   }
   for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (circleHit(p, p.r)) hurt(); }
@@ -792,11 +839,12 @@ function updateEchoInput(dt) {
 // wrong sigil), so this is what keeps "just wait it out" from being viable.
 function spawnEchoBook(hard = false) {
   const b = battle.box, edge = (Math.random() * 4) | 0;
+  // 20% further out (16 -> 19.2) — no telegraph before it's live.
   let x, y, tx, ty;
-  if (edge === 0) { x = rand(b.x, b.x + b.w); y = b.y - 16; tx = rand(b.x, b.x + b.w); ty = b.y + b.h + 16; }
-  else if (edge === 1) { x = b.x + b.w + 16; y = rand(b.y, b.y + b.h); tx = b.x - 16; ty = rand(b.y, b.y + b.h); }
-  else if (edge === 2) { x = rand(b.x, b.x + b.w); y = b.y + b.h + 16; tx = rand(b.x, b.x + b.w); ty = b.y - 16; }
-  else { x = b.x - 16; y = rand(b.y, b.y + b.h); tx = b.x + b.w + 16; ty = rand(b.y, b.y + b.h); }
+  if (edge === 0) { x = rand(b.x, b.x + b.w); y = b.y - 19.2; tx = rand(b.x, b.x + b.w); ty = b.y + b.h + 19.2; }
+  else if (edge === 1) { x = b.x + b.w + 19.2; y = rand(b.y, b.y + b.h); tx = b.x - 19.2; ty = rand(b.y, b.y + b.h); }
+  else if (edge === 2) { x = rand(b.x, b.x + b.w); y = b.y + b.h + 19.2; tx = rand(b.x, b.x + b.w); ty = b.y - 19.2; }
+  else { x = b.x - 19.2; y = rand(b.y, b.y + b.h); tx = b.x + b.w + 19.2; ty = rand(b.y, b.y + b.h); }
   const speed = (hard ? 68 : 52) * DIFFICULTY.projectileMult;
   const a = Math.atan2(ty - y, tx - x);
   battle.echoBooks.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: 6, wobble: rand(0, Math.PI * 2), spin: rand(-3, 3), trailT: 0 });
@@ -832,11 +880,12 @@ function updateEchoBooks(dt) {
 // spears/shapes already do.
 function spawnWeavingBook(hard = false, family = null) {
   const b = battle.box, edge = (Math.random() * 4) | 0;
+  // 20% further out (16 -> 19.2) — no telegraph before it's live.
   let ox, oy, tx, ty;
-  if (edge === 0) { ox = rand(b.x, b.x + b.w); oy = b.y - 16; tx = rand(b.x, b.x + b.w); ty = b.y + b.h + 16; }
-  else if (edge === 1) { ox = b.x + b.w + 16; oy = rand(b.y, b.y + b.h); tx = b.x - 16; ty = rand(b.y, b.y + b.h); }
-  else if (edge === 2) { ox = rand(b.x, b.x + b.w); oy = b.y + b.h + 16; tx = rand(b.x, b.x + b.w); ty = b.y - 16; }
-  else { ox = b.x - 16; oy = rand(b.y, b.y + b.h); tx = b.x + b.w + 16; ty = rand(b.y, b.y + b.h); }
+  if (edge === 0) { ox = rand(b.x, b.x + b.w); oy = b.y - 19.2; tx = rand(b.x, b.x + b.w); ty = b.y + b.h + 19.2; }
+  else if (edge === 1) { ox = b.x + b.w + 19.2; oy = rand(b.y, b.y + b.h); tx = b.x - 19.2; ty = rand(b.y, b.y + b.h); }
+  else if (edge === 2) { ox = rand(b.x, b.x + b.w); oy = b.y + b.h + 19.2; tx = rand(b.x, b.x + b.w); ty = b.y - 19.2; }
+  else { ox = b.x - 19.2; oy = rand(b.y, b.y + b.h); tx = b.x + b.w + 19.2; ty = rand(b.y, b.y + b.h); }
   const speed = (hard ? 78 : 62) * DIFFICULTY.projectileMult;
   const dirA = Math.atan2(ty - oy, tx - ox);
   battle.weavingBooks.push({
@@ -968,11 +1017,12 @@ function launchMaskSpear(t) {
 // leaning entirely on spear volume for difficulty.
 function spawnMaskShard(hard = false) {
   const b = battle.box, edge = (Math.random() * 4) | 0;
+  // 20% further out (24 -> 28.8) — no telegraph before it's live.
   let x, y, side;
-  if (edge === 0) { x = rand(b.x + 20, b.x + b.w - 20); y = b.y - 24; side = 'up'; }
-  else if (edge === 1) { x = b.x + b.w + 24; y = rand(b.y + 20, b.y + b.h - 20); side = 'right'; }
-  else if (edge === 2) { x = rand(b.x + 20, b.x + b.w - 20); y = b.y + b.h + 24; side = 'down'; }
-  else { x = b.x - 24; y = rand(b.y + 20, b.y + b.h - 20); side = 'left'; }
+  if (edge === 0) { x = rand(b.x + 20, b.x + b.w - 20); y = b.y - 28.8; side = 'up'; }
+  else if (edge === 1) { x = b.x + b.w + 28.8; y = rand(b.y + 20, b.y + b.h - 20); side = 'right'; }
+  else if (edge === 2) { x = rand(b.x + 20, b.x + b.w - 20); y = b.y + b.h + 28.8; side = 'down'; }
+  else { x = b.x - 28.8; y = rand(b.y + 20, b.y + b.h - 20); side = 'left'; }
   const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
   const a = Math.atan2(cy - y, cx - x);
   const speed = (hard ? 48 : 38) * DIFFICULTY.projectileMult;
