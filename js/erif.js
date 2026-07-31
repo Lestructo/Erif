@@ -682,22 +682,13 @@ const ERIF_ENRAGE_MINIGAME_PLAN = [
 // player into Final Convergence far earlier than intended (and well before
 // the Enraged dialogue's own 80s-remaining music sync had anything to line
 // up against). ENRAGE_MIN_DURATION floors how early that transition can
-// actually fire.
+// actually fire — enforced by stretching the plan's own final question
+// (always a math segment — see ERIF_ENRAGE_MINIGAME_PLAN) rather than
+// inserting extra bonus rounds after the fact, see its own qMax below.
 const ENRAGE_MIN_DURATION = 40;
 function advanceEnrageSegment() {
   battle.enrageSegmentIndex++;
-  if (battle.enrageSegmentIndex >= ERIF_ENRAGE_MINIGAME_PLAN.length) {
-    if (battle.t - battle.phaseStartT < ENRAGE_MIN_DURATION) {
-      // Under the floor — don't transition yet. No separate "waiting" state
-      // needed: updateEnraged's own `!enrageSeg` fallback already treats an
-      // out-of-range segment index as an ordinary bonus math question, so
-      // this just naturally keeps looping bonus rounds (background hazards
-      // included) until the floor's met on some later call here.
-      return true;
-    }
-    startErifFinalConvergence();
-    return true;
-  }
+  if (battle.enrageSegmentIndex >= ERIF_ENRAGE_MINIGAME_PLAN.length) { startErifFinalConvergence(); return true; }
   return false;
 }
 // A single wind gust, ever — reuses the standalone/Reprise Gale's own
@@ -830,7 +821,20 @@ function updateEnraged(dt) {
         battle.qOptionCountOverride = enrageSeg ? enrageSeg.value : null;
         battle.q = generateOracleQuestion(true);
         battle.qOptionCountOverride = null;
-        battle.qMax = 3.15; battle.qTimer = battle.qMax; battle.lasers = []; // back to the base — see the enrageQuestionTimer/gap trims below for the actual pacing fix
+        // ENRAGE_MIN_DURATION floors how early Enraged can hand off to
+        // Final Convergence (see advanceEnrageSegment) — if a fast/skilled
+        // clear (the memory rounds especially) is running ahead of that
+        // pace, this spreads the needed catch-up evenly across whichever
+        // math questions are still left in the plan, recomputed fresh each
+        // time, rather than dumping the whole difference on the last one.
+        let mathLeft = 0;
+        for (let i = battle.enrageSegmentIndex; i < ERIF_ENRAGE_MINIGAME_PLAN.length; i++) {
+          if (ERIF_ENRAGE_MINIGAME_PLAN[i].type === 'math') mathLeft++;
+        }
+        const remaining = Math.max(0, ENRAGE_MIN_DURATION - (battle.t - battle.phaseStartT));
+        const share = mathLeft > 0 ? remaining / mathLeft : 0;
+        battle.qMax = Math.max(3.15, share - .6); // -.6 leaves room for this question's own laser tail + gap after
+        battle.qTimer = battle.qMax; battle.lasers = [];
         tone(335, .10, 'triangle', .035);
       }
     } else if (battle.lasers.length === 0) {
