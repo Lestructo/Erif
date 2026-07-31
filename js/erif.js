@@ -1300,7 +1300,7 @@ const EQUIP_TIME = .35;
 const EMERGE_SPEED = 380, EMERGE_MIN_TIME = .4, EMERGE_MAX_TIME = .9;
 const WANDER_SPEED = 95, WANDER_TURN_RATE = 2.0;
 const WANDER_REPICK_TIME = [1.3, 2.0];
-const SLAM_COOLDOWN = [3, 6];
+const SLAM_COOLDOWN = [4, 8];
 const CHASE_SPEED = 260, CHASE_TURN_RATE = 3.0, CHASE_MAX_TIME = 1.1, SLAM_ENGAGE_RANGE = 64;
 const SLAM_TELEGRAPH_TIME = .55;
 const HAND_VULNERABLE_TIME = 2.0;
@@ -1348,8 +1348,8 @@ const GLOBAL_WARD_COOLDOWN = 2.5;
 // fireFingerShot) — was 50% more than GLOBAL_WARD_COOLDOWN (gale's own gust
 // was chaining almost back-to-back off the shared 2.5s alone), bumped
 // another 50% on top of that (x1.5 -> x2.25) since it was still coming too
-// often.
-const GALE_COOLDOWN = GLOBAL_WARD_COOLDOWN * 2.25;
+// often, then bumped again (x2.25 -> x3, 7.5s) for the same reason.
+const GALE_COOLDOWN = GLOBAL_WARD_COOLDOWN * 3;
 const BOUNCE_BALL_CHANCE = 0.225;
 const BOUNCE_BALL_SPEED = 210, BOUNCE_BALL_R = 6.5;
 // A rarer, heavier finger-shot variant — visually a faceted judgment gem
@@ -1631,8 +1631,8 @@ function fireFingerShot(hand, x, y) {
     // globalWardCooldownT — the gust's own telegraph+active duration
     // (~2.3s) was close enough to the shared 2.5s cooldown that a new one
     // could start almost the instant the last ended, reading as spammed,
-    // without oracle/verdict having the same complaint. GALE_COOLDOWN (3.75,
-    // 50% more than the shared 2.5s) is the real effective gap for gale now.
+    // without oracle/verdict having the same complaint. GALE_COOLDOWN (7.5s,
+    // see its own comment) is the real effective gap for gale now.
     if (hand.globalWardCooldownT <= 0 && (ward !== 'gale' || hand.galeCooldownT <= 0)) {
       hand.globalWardCooldownT = GLOBAL_WARD_COOLDOWN;
       if (ward === 'oracle') { battle.inkTimer = 1.7; battle.inkSpawn = 0; }
