@@ -619,7 +619,7 @@ function startErifEnrageDialogue() {
   // now (see main.js), so its own length affects exactly when the
   // Enraged theme actually starts — slowed down OR sped up from that base
   // pace as needed so it finishes (not just begins) right as the whole-
-  // fight timer (ERIF_FIGHT_TIME_LIMIT) hits 74s remaining, lining the
+  // fight timer (ERIF_FIGHT_TIME_LIMIT) hits 75s remaining, lining the
   // music up to a consistent moment instead of wherever the player happened
   // to finish Convergence. REPRISE_TARGET_DURATION already aims the Reprise
   // to land early enough that this never needs to speed up in the typical
@@ -628,7 +628,7 @@ function startErifEnrageDialogue() {
   // slop...), floored at 2x the base pace (never faster) so a genuinely bad
   // overshoot reads as brisk rather than an unreadable flash of text.
   const baseCps = DIALOGUE_CHARS_PER_SEC * 3;
-  const targetDuration = Math.max(0, (ERIF_FIGHT_TIME_LIMIT - 74) - battle.t);
+  const targetDuration = Math.max(0, (ERIF_FIGHT_TIME_LIMIT - 75) - battle.t);
   const slowFactor = Math.max(.5, targetDuration / ERIF_ENRAGE_DIALOGUE_NATURAL_DURATION);
   dialogue = {
     lines: ERIF_ENRAGE_DIALOGUE, index: 0, after: 'erifEnraged', context: 'battle',
@@ -1822,7 +1822,7 @@ const ERIF_FIGHT_TIME_LIMIT = 140, ERIF_FIGHT_FADE_WINDOW = 5; // 5s shorter tha
 // How long the whole Reprise (all 8 segments) should take, landing its
 // completion (see REPRISE_ORDER's own advance logic below) this many
 // seconds after fight start. Deliberately ERIF_FIGHT_TIME_LIMIT minus BOTH
-// the Enraged dialogue's 74s-remaining sync target AND that dialogue's own
+// the Enraged dialogue's 75s-remaining sync target AND that dialogue's own
 // natural floor duration — not just the 75s point itself — so that in the
 // typical case the dialogue doesn't have to stretch OR speed up at all; its
 // own charsPerSec/holdTime adjustment (see startErifEnrageDialogue) is only
@@ -1834,7 +1834,7 @@ const ERIF_FIGHT_TIME_LIMIT = 140, ERIF_FIGHT_FADE_WINDOW = 5; // 5s shorter tha
 // Reprise's total off this target, and Verdict (always the last segment) is
 // the one lever that corrects for it, see its own
 // battle.repriseVerdictDuration catch-up below.
-const REPRISE_TARGET_DURATION = (ERIF_FIGHT_TIME_LIMIT - 74) - ERIF_ENRAGE_DIALOGUE_NATURAL_DURATION;
+const REPRISE_TARGET_DURATION = (ERIF_FIGHT_TIME_LIMIT - 75) - ERIF_ENRAGE_DIALOGUE_NATURAL_DURATION;
 function updateErif(dt) {
   if (battle.phase === PHASE_LAST_WAGER) { updateErifHandsFinale(dt); return; }
   const fightRemaining = ERIF_FIGHT_TIME_LIMIT - battle.t;
