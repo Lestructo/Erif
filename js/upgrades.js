@@ -12,6 +12,11 @@ function availableUpgradeTypes() {
 }
 
 let upgradeChoiceOptions = [], upgradeChoiceIndex = 0, upgradeChoiceType = null;
+// Per-card animated scale (drawUpgradeChoice) — eased toward 1.2 for the
+// selected card and 1 for the rest each frame in updateUpgradeChoice, rather
+// than snapping instantly, so moving the selection reads as a quick little
+// grow/shrink instead of a hard cut.
+let upgradeChoiceCardScale = [];
 
 // Called from closeResult() — `type` is the boss just beaten, kept around so
 // confirming a pick can still run the exact same hub-return closeResult()
@@ -20,6 +25,7 @@ function startUpgradeChoice(type) {
   upgradeChoiceType = type;
   upgradeChoiceOptions = shuffleArray(availableUpgradeTypes()).slice(0, 3);
   upgradeChoiceIndex = 0;
+  upgradeChoiceCardScale = upgradeChoiceOptions.map(() => 1);
   mode = 'upgradeChoice';
 }
 
@@ -52,6 +58,10 @@ function updateUpgradeChoice(dt) {
   if (tap('arrowleft') || tap('a') || tap('j')) upgradeChoiceIndex = (upgradeChoiceIndex - 1 + n) % n;
   if (tap('arrowright') || tap('d') || tap('l')) upgradeChoiceIndex = (upgradeChoiceIndex + 1) % n;
   if (tap(' ')) confirmUpgradeChoice();
+  for (let i = 0; i < n; i++) {
+    const target = i === upgradeChoiceIndex ? 1.1 : 1;
+    upgradeChoiceCardScale[i] = lerp(upgradeChoiceCardScale[i] ?? 1, target, Math.min(1, dt * 14));
+  }
 }
 
 // Formats a catalog entry's current -> next value for display. Speed still
@@ -81,7 +91,11 @@ function drawUpgradeChoice() {
   text('A FLAWLESS FLAME.', W / 2, 86, 26);
   text('CHOOSE WHAT IT TEACHES YOU.', W / 2, 118, 15, 'center', .7);
 
-  const n = upgradeChoiceOptions.length, cardW = 240, gap = 24, cardH = 280;
+  // ~12% smaller than the original 240x280 (was tuned down to 20% smaller,
+  // then back up 10% from there) — sized so the hover-grow animation below
+  // (upgradeChoiceCardScale) can push a selected card up past its resting
+  // size without ever feeling cramped or crowding its neighbors.
+  const n = upgradeChoiceOptions.length, cardW = 211, gap = 50, cardH = 246;
   const totalW = n * cardW + Math.max(0, n - 1) * gap, startX = W / 2 - totalW / 2, y = 190;
   upgradeChoiceOptions.forEach((key, i) => {
     const cat = UPGRADE_CATALOG[key], selected = i === upgradeChoiceIndex;
@@ -92,25 +106,42 @@ function drawUpgradeChoice() {
     const a = selected ? 1 : .55;
     const x = startX + i * (cardW + gap);
     const stacks = key === 'hp' ? save.upgrades.hp : save.upgrades[key];
+
+    // Scale the whole card around its own center — the eased value from
+    // updateUpgradeChoice, not a hard snap to 1/1.2, so selecting a
+    // neighbor reads as a quick little grow/shrink instead of a jump cut.
+    const scale = upgradeChoiceCardScale[i] ?? 1, cx = x + cardW / 2, cy = y + cardH / 2;
+    ctx.save();
+    ctx.translate(cx, cy); ctx.scale(scale, scale); ctx.translate(-cx, -cy);
+
     ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = '#fff';
     box(x, y, cardW, cardH, selected ? 3 : 2);
     ctx.restore();
-    text(cat.name, x + cardW / 2, y + 34, 15, 'center', a);
+    text(cat.name, x + cardW / 2, y + 30, 17, 'center', a);
 
-    text(formatUpgradeValue(key, stacks), x + cardW / 2, y + 76, 13, 'center', a * .55);
-    text('NEXT:', x + cardW / 2, y + 98, 10, 'center', a * .45);
-    text(formatUpgradeValue(key, stacks + 1), x + cardW / 2, y + 122, 18, 'center', a);
-
-    if (key === 'hp') {
-      text(`${save.hpProgress}/${cat.costPerStack} TOWARD NEXT POINT`, x + cardW / 2, y + 150, 10, 'center', a * .5);
-    }
-    text(`${stacks}/${cat.cap} CLAIMED`, x + cardW / 2, y + cardH - 46, 10, 'center', a * .45);
+    // Gap after the title opened up (was y+60, only 30px below the name) —
+    // the rest of this common block (stats through CLAIMED/desc) is
+    // identical across every card, so widening it here benefits all three
+    // instead of only the card that happens to need extra room lower down.
+    text(formatUpgradeValue(key, stacks), x + cardW / 2, y + 70, 15, 'center', a * .55);
+    text('NEXT:', x + cardW / 2, y + 88, 11, 'center', a * .45);
+    text(formatUpgradeValue(key, stacks + 1), x + cardW / 2, y + 112, 20, 'center', a);
+    text(`${stacks}/${cat.cap} CLAIMED`, x + cardW / 2, y + 146, 11, 'center', a * .45);
     // Word-wrapped rather than a single fixed-y line — some descriptions
     // (shield, HP) run wider than a card at this font size and were getting
     // clipped past the card's edge instead of actually wrapping.
-    const descLines = wrapLines(cat.desc, cardW - 24, 10.5);
-    const descLineHeight = 13, descStartY = y + cardH - 22 - (descLines.length - 1) * (descLineHeight / 2);
-    descLines.forEach((ln, li) => text(ln, x + cardW / 2, descStartY + li * descLineHeight, 10.5, 'center', a * .7));
+    const descLines = wrapLines(cat.desc, cardW - 24, 11.5);
+    const descLineHeight = 13, descStartY = y + 166;
+    descLines.forEach((ln, li) => text(ln, x + cardW / 2, descStartY + li * descLineHeight, 11.5, 'center', a * .7));
+
+    // HP-only, pinned near the card's bottom edge instead of stacked right
+    // under NEXT's value — keeps it out of the common block above so the
+    // other two cards' layout doesn't need to change to make room for it.
+    if (key === 'hp') {
+      text(`${save.hpProgress}/${cat.costPerStack} TOWARD NEXT POINT`, x + cardW / 2, y + cardH - 34, 11, 'center', a * .5);
+    }
+
+    ctx.restore();
   });
 
   // Sits well above drawControlsLegend's own always-on row (y1=H-21) — this
