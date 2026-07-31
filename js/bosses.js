@@ -202,13 +202,21 @@ function spawnVerdictRing(hard = false) {
 }
 function beginVerdictSpiral(hard = false) {
   battle.ringArcMode = true;
-  // Any regular rings still in flight now carry over into the burst phase
-  // instead of being force-cleared — but the burst's own starting gap has
-  // to pick up from wherever the most recent one already is, not roll an
-  // independent random angle, or the two could easily leave no shared safe
-  // window at the exact moment they overlap.
+  // Carrying leftover regular rings into the burst phase (rather than force-
+  // clearing) turned out to make things worse, not better: the burst phase
+  // spawns a fresh ring every .085-.16s (spawnVerdictContinuousRing), so
+  // within a couple seconds ~15-20 of them are alive at once, densely
+  // packed. That's fine on its own — they all share the same slowly-rotating
+  // gapA, forming one continuous spiral corridor — but a leftover regular
+  // ring drifts at a completely different, much faster fixed rate, so it
+  // immediately races out of alignment and closes off whatever gap the
+  // dense spiral still has, with nowhere left safe against both at once.
+  // Back to a hard clear here; the gap angle itself still carries over
+  // (grabbed before clearing) so the spiral at least starts where the last
+  // regular ring's own gap was.
   const lastRegular = battle.rings[battle.rings.length - 1];
   battle.ringGapA = lastRegular ? lastRegular.gapA : rand(0, Math.PI * 2);
+  battle.rings = [];
   battle.ringArcDirection = choose([-1, 1]);
   battle.ringSwitchTimer = hard ? rand(2.2, 3.2) : rand(3.2, 4.6);
   battle.spawn = 0;
@@ -370,12 +378,16 @@ function spawnWindRow(hard = false, dirOverride = null, allowExtra = true) {
   // Chance raised well up (was .4/.3) — the goal is reliably visible
   // pressure from another side, not a coin flip that could just never come
   // up in a short window; the 1s global floor and the extras' own 3-4.5s
-  // spacing above are what actually keep it from overwhelming the player.
+  // spacing (between each other, once queued — see updateWindLines) are
+  // what actually keep it from overwhelming the player. This very first one
+  // fires much sooner than that (1-1.5s, not 3-4.5s) — Erif's Reprise
+  // segment is only 7s long, and at 3-4.5s the "different side" pressure
+  // was routinely never showing up inside the segment at all.
   if (allowExtra && battle.windRowExtraQueue <= 0 && Math.random() < (hard ? .8 : .7)) {
     battle.windRowExtraHard = hard;
     battle.windRowExtraDir = dir;
     battle.windRowExtraQueue = Math.floor(rand(1, 4));
-    battle.windRowExtraTimer = rand(3, 4.5);
+    battle.windRowExtraTimer = rand(1, 1.5);
   }
 }
 // travelOverride lets the renderer sample earlier points along the same

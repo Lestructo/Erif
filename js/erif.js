@@ -581,10 +581,12 @@ function updateConvergence(dt) {
   battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20);
   updateRingHazards(dt); updateSpearHazards(dt, true); updateShapeHazards(dt, true);
   // Hourglass/Gale cues (see spawnConvergenceCueHazard above) spawn real
-  // orbs/flags now instead of borrowed spears — these need their own update
-  // loops run somewhere, which Convergence never did before since it never
-  // used to spawn either kind of hazard.
-  updateHourglassOrbs(dt); updateGaleFlags(dt);
+  // orbs/flags/wind rows now instead of borrowed spears — these need their
+  // own update loops run somewhere, which Convergence never did before since
+  // it never used to spawn any of these. updateWindLines specifically was
+  // still missing even after the others were added — the gale cue's own
+  // wind-line row spawned once and then just sat there motionless.
+  updateHourglassOrbs(dt); updateGaleFlags(dt); updateWindLines(dt);
   updateWeavingBooks(dt); updateTrailSquares(dt);
 }
 
@@ -823,6 +825,12 @@ function updateEnraged(dt) {
   updateRingHazards(dt);
   updateSpearHazards(dt, false, launchMaskSpear);
   updateShapeHazards(dt);
+  // Enraged's gale gust (see updateOneShotGaleGust above) spawns real flags
+  // and a wind-line row, but this function never actually ticked either
+  // one's own per-frame update — they'd spawn once and then just sit there
+  // completely motionless for the rest of the phase, reading as "frozen."
+  updateGaleFlags(dt);
+  updateWindLines(dt);
 }
 
 // ---- Phase E: Final Convergence ----
