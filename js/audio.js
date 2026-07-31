@@ -188,7 +188,7 @@ function ensureTrueTheme() {
       // the player presses space to start the Reckoning) doesn't eat that
       // latency and can play() instantly instead of appearing to wait on the
       // arena box's grow animation.
-      trueThemeAudio.addEventListener('loadedmetadata', () => { try { trueThemeAudio.currentTime = .75; } catch {} });
+      trueThemeAudio.addEventListener('loadedmetadata', () => { try { trueThemeAudio.currentTime = 2; } catch {} });
     }
     catch { trueThemeAudio = { play: () => Promise.resolve(), pause() {}, volume: 0, currentTime: 0, paused: true }; }
   }
@@ -220,10 +220,10 @@ function setMusic(name) {
     musicFadeMult = 1;
     try {
       const a = ensureTrueTheme();
-      // Same .75s-in start as ensureErifTheme's track above, for the same
-      // reason — this is also a mastered MP3 that opens with a stretch of
-      // near-silence, which read as playback lag starting at 0.
-      a.volume = musicVolume * .20; a.currentTime = .75;
+      // A longer silent lead-in than ensureErifTheme's own track above (2s
+      // vs .75s) — a different mastered MP3, opens with more near-silence
+      // before the track actually starts, which read as playback lag.
+      a.volume = musicVolume * .20; a.currentTime = 2;
       a.play().catch(() => {});
     } catch {}
   }

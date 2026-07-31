@@ -258,6 +258,10 @@ function makeBattle(type) {
     erifHandsLaughedAtFlurry: false,
     erifBounceBalls: [], // universal wall-bouncing projectiles, any finger can fire one
     erifEyeBalls: [], // permanent wall-bouncing "eyes" — one popped out per head-HP loss, never break, up to 8 by fight's end
+    erifBeamPhase: null, // null | 'telegraph' | 'active' — set on every ward break unless already truthy (see handleErifPunch/updateErifHandHazards, erif.js)
+    erifBeamAngle: 0, // locked in when the telegraph starts, then rotates once 'active'
+    erifBeamTimer: 0, // counts down during 'telegraph', counts up during 'active' until a full rotation's worth of time has passed
+    erifBeamDir: 1, // 1 or -1 — flipped before each new beam so successive beams alternate direction (first one ends up counter-clockwise)
     erifReckoningFadeT: 0, // 0-1 black-out progress for the final 5s of the hard time limit (a loss)
     erifFightFadeT: 0, // same black-out progress, but for the whole fight's own hard 140s cap (see ERIF_FIGHT_TIME_LIMIT, erif.js) — every phase before the Reckoning
     punchFlashT: 0, punchDir: 0, // the boxing-glove shield-punch visual

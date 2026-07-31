@@ -1175,7 +1175,7 @@ function startErifReckoningIntro() {
 // and resumes on its own; each hand's cycle runs fully independently of the
 // other. Erif's head HP equals the ward count (8), so the fight ends the
 // instant the 8th hand ever breaks, straight into the existing
-// beginErifTrueVictory/true-ending flow. A hard 100s clock black-fades the
+// beginErifTrueVictory/true-ending flow. A hard 135s clock black-fades the
 // whole fight out (a loss) if it runs long. ----
 // h trimmed from 580 — unlike Enraged/Final Convergence, this phase keeps
 // the HP row/timer/controls legend on-screen (see hideBottomUI, main.js) on
@@ -1195,18 +1195,34 @@ const HAND_HIT_COOLDOWN = .4;
 // EQUIP_TIME/EMERGE_* below on top of this, same as it always has.
 const HAND_RECHARGE_TIME = 5;
 const ERIF_HEAD_SCALE = .85; // read by render.js's drawErifHeadHUD too
-const RECKONING_TIME_LIMIT = 100, RECKONING_FADE_WINDOW = 5;
+const RECKONING_TIME_LIMIT = 135, RECKONING_FADE_WINDOW = 5;
+
+// Erif's own mouth laser — fires once per ward break (see handleErifPunch's
+// trigger), alternating direction each time, but skipped entirely if one is
+// already telegraphing/rotating (battle.erifBeamPhase truthy) — a player
+// aggressive enough to break a ward during that danger window is rewarded
+// with no second beam stacking on top of them, rather than punished for it.
+// A 3s telegraph (an outlined, non-damaging indicator locked to the exact
+// angle it'll fire at) gives real warning before it goes live and starts
+// rotating — see updateErifHandHazards for the 'telegraph'/'active' state
+// machine and drawErifBeam, render.js, for both visuals.
+const ERIF_BEAM_TELEGRAPH_TIME = 3;
+const ERIF_BEAM_ROT_PERIOD = 10; // seconds for one full rotation, then it stops completely (not permanent)
+const ERIF_BEAM_ROT_SPEED = (Math.PI * 2) / ERIF_BEAM_ROT_PERIOD;
+const ERIF_BEAM_HALF_WIDTH = .16; // radians — a wedge, so it visually widens with distance rather than covering the whole arena near the origin
+const ERIF_BEAM_REACH = 1000; // comfortably covers every corner of ERIF_HANDS_BOX (910x490) from any point near the head's home anchor
+const ERIF_BEAM_MOUTH_OFFSET_Y = 28; // local-space y (pre-scale) of the mouth's opening — see drawBossIcon's 'erif' branch, render.js
 
 // Hand movement AI — wander/chase/slam/retreat/recharge. Numbers are tuned
 // so realistic, non-perfect play clears all 8 wards with real buffer under
-// the 100s hard cap rather than right up against it — see
+// the 135s hard cap rather than right up against it — see
 // RECKONING_TIME_LIMIT above.
 const HAND_DOCK_OFFSET = 150; // either side of Erif's own anchor point — clear of the portrait's reaching-line fringe (~121px out at ERIF_HEAD_SCALE), not overlapping it
 const EQUIP_TIME = .35;
 const EMERGE_SPEED = 380, EMERGE_MIN_TIME = .4, EMERGE_MAX_TIME = .9;
 const WANDER_SPEED = 95, WANDER_TURN_RATE = 2.0;
 const WANDER_REPICK_TIME = [1.3, 2.0];
-const SLAM_COOLDOWN = [2.4, 3.6];
+const SLAM_COOLDOWN = [5, 7.5];
 const CHASE_SPEED = 260, CHASE_TURN_RATE = 3.0, CHASE_MAX_TIME = 1.1, SLAM_ENGAGE_RANGE = 64;
 const SLAM_TELEGRAPH_TIME = .55;
 const HAND_VULNERABLE_TIME = 2.0;
@@ -1219,7 +1235,7 @@ const RETRACT_SPEED = 480, RETRACT_MIN_TIME = .35, RETRACT_MAX_TIME = 1.1;
 // entirely inside this lockout window, so the earliest the other hand can
 // begin chasing is SLAM_STAGGER_TIME after this hand started — which puts
 // its own impact at least SLAM_STAGGER_TIME after this hand's impact too.
-const SLAM_STAGGER_TIME = 3;
+const SLAM_STAGGER_TIME = 6;
 
 // Fingers — 1 thumb + 3 pointers, fanned around local "forward" (angle 0 =
 // hand.facing). Each independently charges (reach eases from reachMin to
@@ -1231,10 +1247,14 @@ const HAND_FINGERS = [
   { angle: 0, thumb: false, reachMin: 30, reachMax: 50 },
   { angle: 0.32, thumb: false, reachMin: 28, reachMax: 46 },
 ];
-// Charge time up 1.8 -> 2.4 (a flat 25% slower firing rate) and stagger
-// scaled up to match, keeping the same 0/25/50/75%-of-charge offsets.
-const FINGER_CHARGE_TIME = 2.4;
-const FINGER_STAGGER = [0, .6, 1.2, 1.8];
+// Charge time up 1.8 -> 2.4 -> 3.2 (each step another flat 25% slower
+// firing rate) and stagger scaled up to match both times, keeping the same
+// 0/25/50/75%-of-charge offsets. The second bump is to compensate for the
+// Reckoning itself running longer now (135s, was 100) with more layered on
+// top of it (the mouth laser) — fewer finger-fired attacks overall so the
+// extra time reads as more fight, not more simultaneous clutter.
+const FINGER_CHARGE_TIME = 3.2;
+const FINGER_STAGGER = [0, .8, 1.6, 2.4];
 // oracle/gale/verdict fire a single global effect regardless of which
 // finger triggers them (confirmed in spawnConvergenceCueHazard — none of
 // the three actually vary with target position), so they're throttled
@@ -1608,6 +1628,22 @@ function handleErifPunch() {
     tone(300 + battle.erifHeadHitsLanded * 22, .1, 'sine', .05);
     spawnSparks(battle.erifHeadX, battle.erifHeadY, 8, { color: '#fff', speed: [60, 160], life: .35 });
     spawnErifEyeBall(); // one of Erif's own eyes pops out and joins the fight permanently, one per ward lost
+    // Every ward break attempts to fire the mouth laser — but only if one
+    // isn't already telegraphing/rotating (erifBeamPhase truthy skips this
+    // entirely, rewarding a break landed during that danger window rather
+    // than stacking a second beam on top of it).
+    if (!battle.erifBeamPhase) {
+      battle.erifBeamDir *= -1; // alternates every real beam (see its init, battle-core.js — starts counter-clockwise)
+      battle.erifBeamPhase = 'telegraph';
+      battle.erifBeamTimer = ERIF_BEAM_TELEGRAPH_TIME;
+      // Locked in now rather than re-aimed when it actually goes live —
+      // gives the player a fixed point to plan a dodge around for the whole
+      // telegraph, not a moving target.
+      const s = battle.soul;
+      const ox = battle.erifHeadX, oy = battle.erifHeadY + ERIF_BEAM_MOUTH_OFFSET_Y * ERIF_HEAD_SCALE;
+      battle.erifBeamAngle = Math.atan2(s.y - oy, s.x - ox);
+      tone(200, .12, 'triangle', .03);
+    }
     if (battle.erifHeadHp <= 0) {
       if (!battle.erifHandsLaughedAtFlurry) { battle.erifHandsLaughedAtFlurry = true; erifLaugh(); }
       beginErifTrueVictory();
@@ -1689,6 +1725,31 @@ function updateErifHandHazards(dt) {
   }
   for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, p.r)) hurt(); }
   battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20 && !hazardExpired(p.ageExpireT));
+  if (battle.erifBeamPhase === 'telegraph') {
+    battle.erifBeamTimer -= dt;
+    if (battle.erifBeamTimer <= 0) {
+      battle.erifBeamPhase = 'active';
+      battle.erifBeamTimer = 0; // reused below to track rotation progress against ERIF_BEAM_ROT_PERIOD
+      kick(.08); tone(50, .4, 'sawtooth', .07); noiseHit(.16, .05, 700);
+      spawnSparks(battle.erifHeadX, battle.erifHeadY, 12, { color: EMBER, speed: [100, 240], life: .45 });
+    }
+  } else if (battle.erifBeamPhase === 'active') {
+    battle.erifBeamTimer += dt;
+    if (battle.erifBeamTimer >= ERIF_BEAM_ROT_PERIOD) {
+      battle.erifBeamPhase = null; // exactly one full rotation, then it stops completely — not permanent
+    } else {
+      battle.erifBeamAngle += battle.erifBeamDir * ERIF_BEAM_ROT_SPEED * dt;
+      const ox = battle.erifHeadX, oy = battle.erifHeadY + ERIF_BEAM_MOUTH_OFFSET_Y * ERIF_HEAD_SCALE;
+      const s = battle.soul;
+      // Same shortest-signed-angle-difference trick as ringAngleIsOpen
+      // (hazards.js) — atan2(sin(Δ), cos(Δ)) avoids the ±π wraparound bug a
+      // plain subtraction would have, applied here to a danger arc instead
+      // of a ring's safe arc.
+      const a = Math.atan2(s.y - oy, s.x - ox);
+      const da = Math.atan2(Math.sin(a - battle.erifBeamAngle), Math.cos(a - battle.erifBeamAngle));
+      if (Math.abs(da) <= ERIF_BEAM_HALF_WIDTH && dist(s.x, s.y, ox, oy) <= ERIF_BEAM_REACH) hurt();
+    }
+  }
 }
 
 function beginErifTrueFinal() {
@@ -1757,7 +1818,7 @@ function updateErifHandsFinale(dt) {
 
   updateErifHandHazards(dt);
 
-  // Hard 100s time limit — the last 5s fade the whole fight to black, and
+  // Hard 135s time limit — the last 5s fade the whole fight to black, and
   // running the clock all the way out is a loss. Unlike hurt(), this always
   // applies, God Mode included — the clock is a hard fight constraint, not
   // ordinary damage, so debug invulnerability doesn't cover it.
@@ -1780,7 +1841,7 @@ function beginErifTrueVictory() {
   battle.trueVictoryT = 0;
   battle.trueVictoryDialogueIndex = 0;
   // Same reset as beginErifVictory, for the same reason — winning in the
-  // Reckoning's own hard 100s timer's last 5s (see RECKONING_TIME_LIMIT,
+  // Reckoning's own hard 135s timer's last 5s (see RECKONING_TIME_LIMIT,
   // updateErifHandsFinale) leaves musicFadeMult/erifReckoningFadeT already
   // partway faded, which would otherwise carry straight into this victory's
   // own fade-in instead of starting clean.

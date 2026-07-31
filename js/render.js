@@ -939,6 +939,40 @@ function drawErifEyeBall(eye) {
   ctx.beginPath(); ctx.arc(eye.x, eye.y, eye.r * .4, 0, Math.PI * 2); ctx.fill();
 }
 
+// Erif's mouth laser (see battle.erifBeamPhase/erifBeamAngle, erif.js) — a
+// rotating wedge of danger from the mouth's own local offset out to
+// ERIF_BEAM_REACH, one full rotation and then it stops. During 'telegraph'
+// this is just an outlined, pulsing, non-damaging indicator locked to the
+// angle it's about to fire at (see updateErifHandHazards for the state
+// machine) — real warning before it actually goes live. Once 'active' it's
+// the solid version: same soft-glow-behind-bright-core language as the eye/
+// bounce balls above, just stretched into an arc instead of a circle — a
+// wide, dim EMBER wedge for the glow, a narrower brighter white core wedge
+// on top so it still reads clearly against the glow at any distance.
+function drawErifBeam() {
+  const ox = battle.erifHeadX, oy = battle.erifHeadY + ERIF_BEAM_MOUTH_OFFSET_Y * ERIF_HEAD_SCALE;
+  if (battle.erifBeamPhase === 'telegraph') {
+    const pulse = .4 + .4 * Math.abs(Math.sin(performance.now() / 90));
+    ctx.save(); ctx.globalAlpha = pulse; ctx.strokeStyle = EMBER; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ox, oy);
+    ctx.arc(ox, oy, ERIF_BEAM_REACH, battle.erifBeamAngle - ERIF_BEAM_HALF_WIDTH, battle.erifBeamAngle + ERIF_BEAM_HALF_WIDTH);
+    ctx.closePath(); ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  ctx.save(); ctx.globalAlpha = .3; ctx.fillStyle = EMBER;
+  ctx.beginPath(); ctx.moveTo(ox, oy);
+  ctx.arc(ox, oy, ERIF_BEAM_REACH, battle.erifBeamAngle - ERIF_BEAM_HALF_WIDTH, battle.erifBeamAngle + ERIF_BEAM_HALF_WIDTH);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha = .65; ctx.fillStyle = '#fff';
+  const coreHalf = ERIF_BEAM_HALF_WIDTH * .4;
+  ctx.beginPath(); ctx.moveTo(ox, oy);
+  ctx.arc(ox, oy, ERIF_BEAM_REACH, battle.erifBeamAngle - coreHalf, battle.erifBeamAngle + coreHalf);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
 // Purely atmospheric — no hitbox, no gameplay interaction — for Final
 // Convergence specifically: Erif himself drifts slowly in the background,
 // and a pair of his own hands idly float in the margins outside the box,
@@ -983,7 +1017,15 @@ function drawBattle() {
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.strokeStyle = '#fff'; ctx.fillStyle = '#fff';
   const b = battle.box; drawFloorGrid(b.x, b.y, b.w, b.h);
   drawEmbers(); // background layer — behind every hazard/boss/candle drawn below
-  if (battle.type === 'erif' && battle.phase === PHASE_FINAL_CONVERGENCE) drawFinalConvergenceErifPresence();
+  // mode === 'battle' excludes this: battle.phase doesn't actually advance
+  // off PHASE_FINAL_CONVERGENCE until beginErifTrueFinal, at the very end of
+  // the victory screen -> twist dialogue -> Reckoning-intro dialogue chain
+  // (all of which reuse drawBattle underneath them, see drawDialogue) — so
+  // without this check, this purely-atmospheric decoration kept rendering
+  // (frozen, since battle.t isn't advancing during those dialogues) behind
+  // all three of those instead of disappearing the instant the victory
+  // screen begins.
+  if (battle.type === 'erif' && battle.phase === PHASE_FINAL_CONVERGENCE && mode === 'battle') drawFinalConvergenceErifPresence();
   // Enraged onward (Enraged, Final Convergence, the Reckoning) all skip the
   // header — the arena is tall enough from Enraged on (see ERIF_ENRAGE_BOX,
   // erif.js) that there isn't room for both it and the box, and Erif's own
@@ -1323,6 +1365,7 @@ function drawBattle() {
   }
   for (const ball of battle.erifBounceBalls) drawErifBounceBall(ball);
   for (const eye of battle.erifEyeBalls) drawErifEyeBall(eye);
+  if (battle.erifBeamPhase) drawErifBeam();
   for (const m of battle.marks) {
     const pct = clamp(m.t / .68, 0, 1);
     ctx.save(); ctx.globalAlpha = .45 + .5 * (1 - pct); ctx.lineWidth = 2;
@@ -1666,7 +1709,7 @@ function drawBattle() {
   }
 
   // Erif's hard time limits (see battle.erifReckoningFadeT/erifFightFadeT,
-  // erif.js — the Reckoning's own 100s cap and the whole fight's 140s cap
+  // erif.js — the Reckoning's own 135s cap and the whole fight's 140s cap
   // respectively, mutually exclusive in practice) — both are loss conditions
   // (running either clock out ends the fight in defeat), so this fades to
   // black rather than the white used elsewhere for winning, over the final
