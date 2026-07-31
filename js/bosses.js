@@ -150,7 +150,7 @@ function updateHourglass(dt, hard = false) {
   if (battle.sandTimer <= 0) beginSandPhase(hard, battle.sandPhase === 'slow' ? 'fast' : 'slow');
 
   battle.sandGrainTimer -= dt;
-  if (battle.sandGrainTimer <= 0) { spawnSandGrain(hard); battle.sandGrainTimer = (hard ? .22 : .3) / battle.timeScale; }
+  if (battle.sandGrainTimer <= 0) { spawnSandGrain(hard); battle.sandGrainTimer = (hard ? .22 : .3) / 1.1 / battle.timeScale; } // 10% more often
   updateSandGrains(dt);
 
   battle.hourglassOrbTimer -= dt;
@@ -201,11 +201,16 @@ function verdictPhaseProgress(hard = false) {
   const cycle = battle.type === 'erif' ? (battle.repriseVerdictDuration ?? 10) : 7;
   return ((battle.t - battle.phaseStartT) % cycle) / cycle;
 }
-// Verdict was landing as the easiest trial in the roster, so every knob
-// here got pushed up a step: rings close faster, their gap actually spins
-// more per ring, gaps are a bit tighter, direction flips come sooner, and
-// both phases spawn rings noticeably more often.
-function spawnVerdictRing(hard = false) {
+// The Reckoning's own ward (js/erif.js ~1655-1657) calls spawnVerdictRing/
+// CloseBurst/SpacedBurst directly, always passing a real `origin` point —
+// updateVerdict's own calls (normal/hard/reprise fight alike) never pass
+// one. That presence/absence is used below as the switch between "the
+// regular Verdict fight" (original tuning) and "the Reckoning's ward"
+// (today's own tuning, kept as-is per its own design) — battle.type alone
+// can't tell those apart, since Reprise and the Reckoning are both
+// battle.type 'erif'.
+const VERDICT_RING_SPEED = { hard: 138.75, normal: 108.75 }; // Reckoning-only
+function spawnVerdictRing(hard = false, origin = null) {
   // Align with whatever ring is already innermost/most recent (which could
   // be a leftover rotating/burst ring right after that phase just ended,
   // not just another normal ring) instead of rolling a fully independent
@@ -237,8 +242,48 @@ function spawnVerdictRing(hard = false) {
     if (lastRing) drift = lastRing.drift;
     battle.verdictJustExitedBurst = false;
   }
-  spawnRing(hard, gapA, 360, drift, hard ? 185 : 145, opening);
+  const speed = origin ? (hard ? VERDICT_RING_SPEED.hard : VERDICT_RING_SPEED.normal) : (hard ? 185 : 145);
+  spawnRing(hard, gapA, 360, drift, speed, opening, 1, origin);
   tone(180, .03, 'sine', .025);
+}
+// Reckoning-only from here down (spawnVerdictCloseBurst/spawnVerdictSpacedBurst)
+// — updateVerdict itself never calls either; both exist solely for the
+// Reckoning's own ward (js/erif.js ~1655-1657), which always passes an
+// `origin`. "Close" means bunched together in time (all 3 spawned in the
+// same instant), not spatially close — a generous 8-way gap count each, but
+// landing at independent angles so only the *overlap* of their (much
+// narrower, since 8 gaps means 8 walls too) wall segments is the real hazard.
+const VERDICT_CLOSE_BURST_GAP = .28; // per-gap half-width at 8 gaps
+// Staggered starting radii (336/360/384) rather than all 3 at a flat 360 —
+// same speed + same radius meant all 3 rings stayed perfectly concentric
+// for their entire lifetime, reading as just one ring with a busier gap
+// pattern instead of an actual burst of three. Small enough offsets that
+// they still read as one tight cluster ("close"), just now visibly three
+// distinct rings closing in together instead of one merged circle.
+const VERDICT_CLOSE_BURST_RADII = [336, 360, 384];
+function spawnVerdictCloseBurst(hard = false, origin = null) {
+  const speed = hard ? VERDICT_RING_SPEED.hard : VERDICT_RING_SPEED.normal;
+  for (const r of VERDICT_CLOSE_BURST_RADII) {
+    spawnRing(hard, rand(0, Math.PI * 2), r, 0, speed, VERDICT_CLOSE_BURST_GAP, 8, origin);
+  }
+  tone(200, .05, 'sine', .03);
+}
+// "Spaced" — 2 rings, 4-way gap count each (fewer, wider gaps than the
+// close burst's 8), the 2nd fired a beat after the 1st instead of together,
+// so this reads as a distinct one-two rather than a single simultaneous
+// wall.
+const VERDICT_SPACED_BURST_GAP = .42; // per-gap half-width at 4 gaps — matches the plain ring's own opening closely
+const VERDICT_SPACED_BURST_DELAY = .55;
+function spawnVerdictSpacedBurst(hard = false, origin = null) {
+  const speed = hard ? VERDICT_RING_SPEED.hard : VERDICT_RING_SPEED.normal;
+  spawnRing(hard, rand(0, Math.PI * 2), 360, 0, speed, VERDICT_SPACED_BURST_GAP, 4, origin);
+  battle.verdictSpacedBurstPending = true;
+  battle.verdictSpacedBurstTimer = VERDICT_SPACED_BURST_DELAY;
+  // Snapshotted now (not re-read at fire time) so the 2nd ring lands at the
+  // same conceptual origin as the 1st — a "spaced" pair offset in time, not
+  // in space.
+  battle.verdictSpacedBurstOrigin = origin;
+  tone(200, .05, 'sine', .03);
 }
 function beginVerdictSpiral(hard = false) {
   battle.ringArcMode = true;
@@ -277,9 +322,6 @@ const RING_ENTRY_RAMP_COUNT = 6; // how many burst rings it takes to ramp from t
 function spawnVerdictContinuousRing(hard = false) {
   const phase = clamp((verdictPhaseProgress(hard) - .5) / .5, 0, 1);
   if (battle.ringGapA == null) battle.ringGapA = rand(0, Math.PI * 2);
-  // Normal's own numbers nudged a step tighter (was .10-.135/.035/175/.5) —
-  // still clearly gentler than Hard's .125-.16/.05/205/.37, just not quite
-  // as loose as before.
   const step = lerp(hard ? .125 : .11, hard ? .16 : .145, phase);
   battle.ringGapA += battle.ringArcDirection * step;
   const tinyWobble = Math.sin(battle.t * (hard ? 2.3 : 1.8)) * .012;
@@ -324,8 +366,6 @@ function updateVerdict(dt, hard = false, moveFn = moveSoulFree) {
 
   battle.spawn -= dt;
   if (battle.spawn <= 0) {
-    // Eased back up a little (was .52/.75) — the non-rotating "normal"
-    // rings were coming in a bit too tight to comfortably navigate.
     if (!rotating) { spawnVerdictRing(hard); battle.spawn = hard ? .62 : .85; }
     else {
       spawnVerdictContinuousRing(hard);
@@ -367,7 +407,13 @@ function spawnGaleFlag(hard = false) {
   else { x = b.x + b.w + 31.2; y = rand(b.y + 20, b.y + b.h - 20); }
   const speed = (hard ? 76 : 58) * DIFFICULTY.projectileMult;
   const a = Math.atan2(battle.soul.y - y, battle.soul.x - x);
-  battle.galeFlags.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, speed, r: 9, wave: rand(0, Math.PI * 2), ...hazardAgeFields(20) });
+  // r bumped 9 -> 11 — the drawn pole (a straight line from -9 to +9 along
+  // the heading, see the flag-drawing loop in render.js) reaches a full 9px
+  // from center on its own, but updateGaleFlags' hitRadius subtracts 2 off
+  // this r, so the actual hit boundary (was 7) undershot the pole's real
+  // visual reach — the stick could visibly poke past the hit radius before
+  // it registered.
+  battle.galeFlags.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, speed, r: 11, wave: rand(0, Math.PI * 2), ...hazardAgeFields(20) });
   tone(230, .09, 'triangle', .025);
 }
 function updateGaleFlags(dt) {
@@ -585,7 +631,7 @@ function updateGale(dt, hard = false) {
   if (battle.galeGustPhase === 'active') {
     const b = battle.box, s = battle.soul;
     s.x = clamp(s.x + battle.windVX * dt, b.x + s.r, b.x + b.w - s.r);
-    s.y = clamp(s.y + battle.windVY * dt, b.y + s.r, b.y + b.h - s.r);
+    s.y = clamp(s.y + battle.windVY * dt, b.y + s.r, b.y + b.h - soulVisualBottomMargin());
   }
 
   if (!battle.galeGustPhase) {
@@ -672,7 +718,7 @@ function updateExecutioner(dt, hard = false) {
     // Widened from 1.85/2.3 — the full-wall volley (and the tightly-packed
     // needle burst below) were crowding out the spaced 3/5/7 gapped patterns
     // that specialTimer hands out; see triggerSpearSpecial's gapped-bias too.
-    battle.spawn = hard ? 2.5 : 3.1;
+    battle.spawn = (hard ? 2.5 : 3.1) / 1.2; // 20% more spears
     // The actual fix for "everything lands at once": each cadence is fine on
     // its own, but two independent timers can drift into phase and briefly
     // pile a volley and a needle burst right on top of each other. A minimum
@@ -681,12 +727,12 @@ function updateExecutioner(dt, hard = false) {
   }
   if (battle.needleTimer <= 0) {
     spawnSpearNeedles(hard);
-    battle.needleTimer = hard ? 1.6 : 2.0; // widened from 1.15/1.42, same reasoning as spawn above
+    battle.needleTimer = (hard ? 1.6 : 2.0) / 1.2; // widened from 1.15/1.42, then 20% more spears on top
     battle.spawn = Math.max(battle.spawn, .5);
   }
   if (battle.specialTimer <= 0) {
     triggerSpearSpecial(hard);
-    battle.specialTimer = hard ? rand(1.9, 2.6) : rand(2.3, 3.1); // tightened so the spaced patterns show up more often
+    battle.specialTimer = (hard ? rand(1.9, 2.6) : rand(2.3, 3.1)) / 1.2; // tightened so the spaced patterns show up more often, then 20% more spears on top
   }
   updateSpearHazards(dt);
 }
@@ -753,7 +799,15 @@ function spawnShapeShard(hard = false, seek = false) {
   }
   const a = Math.atan2(ty - hand.y, tx - hand.x) + rand(hard ? -.14 : -.20, hard ? .14 : .20);
   const speed = (hard ? (seek ? 205 : 235) : (seek ? 155 : 185)) * DIFFICULTY.projectileMult;
-  battle.shapes.push({ type: choose(['circle', 'triangle', 'square']), x: hand.x, y: hand.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, size: hard ? 8 : 7, spin: rand(-4, 4), a: 0, life: hard ? 2.6 : 3.0 });
+  // life was 2.6/3.0 — far too short against this box's real diagonal
+  // (500x270 arena + the ±90 despawn margin, ~815px corner-to-corner) at
+  // Normal-tier speed (DIFFICULTY.projectileMult=.5): the standalone trial's
+  // own slowest case (hard=false, seek, 155*.5=77.5px/s) only covered ~230px
+  // in 3.0s, and Reprise's (hard=true, seek, 205*.5=102.5px/s) only ~267px in
+  // 2.6s — both dying to the timer long before reaching the wall, reading as
+  // "vanishing early." Resized so each branch's own worst case clears the
+  // full diagonal with room to spare.
+  battle.shapes.push({ type: choose(['circle', 'triangle', 'square']), x: hand.x, y: hand.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, size: hard ? 8 : 7, spin: rand(-4, 4), a: 0, life: hard ? 10 : 13 });
 }
 // moveFn lets a caller swap in moveSoulWithShield instead of the standalone
 // trial's own moveSoulFree — see updateVerdict's note above; Erif's Reprise
@@ -814,7 +868,7 @@ function updateOracle(dt, hard = false) {
     const x = rand(b.x + 10, b.x + b.w - 10);
     // 20% further out (8 -> 9.6) — no telegraph before it's live.
     battle.bullets.push({ x, y: b.y - 9.6, vx: (hard ? rand(-55, 55) : rand(-18, 18)) * DIFFICULTY.projectileMult, vy: (hard ? 275 : 215) * DIFFICULTY.projectileMult, r: 5, ...hazardAgeFields(3) });
-    battle.spawn = hard ? .19 : .31;
+    battle.spawn = hard ? .1583 : .2583; // 20% more often (was .19/.31)
   }
   for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (circleHit(p, p.r)) hurt(); }
   battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20 && !hazardExpired(p.ageExpireT));
@@ -947,7 +1001,10 @@ function updateEchoInput(dt) {
 // actually safe. There's no round timeout anymore (see updateEchoInput
 // above — a round only ever ends by finishing the sequence or touching the
 // wrong sigil), so this is what keeps "just wait it out" from being viable.
-function spawnEchoBook(hard = false) {
+// Optional `family` tag, same convention as spawnWeavingBook — lets
+// Convergence's archivist cue despawn its own batch on capture (see
+// clearConvergenceCueHazards, erif.js).
+function spawnEchoBook(hard = false, family = null) {
   const b = battle.box, edge = (Math.random() * 4) | 0;
   // 20% further out (16 -> 19.2) — no telegraph before it's live.
   let x, y, tx, ty;
@@ -957,7 +1014,7 @@ function spawnEchoBook(hard = false) {
   else { x = b.x - 19.2; y = rand(b.y, b.y + b.h); tx = b.x + b.w + 19.2; ty = rand(b.y, b.y + b.h); }
   const speed = (hard ? 68 : 52) * DIFFICULTY.projectileMult;
   const a = Math.atan2(ty - y, tx - x);
-  battle.echoBooks.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: 6, wobble: rand(0, Math.PI * 2), spin: rand(-3, 3), trailT: 0, ...hazardAgeFields(20) });
+  battle.echoBooks.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: 6, wobble: rand(0, Math.PI * 2), spin: rand(-3, 3), trailT: 0, family, ...hazardAgeFields(20) });
   tone(160, .12, 'sine', .02);
 }
 function updateEchoBooks(dt) {
@@ -1108,7 +1165,7 @@ function flipMaskMirror() {
   battle.maskTellPhase = 1;
   tone(battle.maskMirrored ? 90 : 140, .18, 'sawtooth', .04);
 }
-function launchMaskSpear(t) {
+function launchMaskSpear(t, silent = false) {
   const b = battle.box, speed = (t.hard ? 470 : 390) * DIFFICULTY.projectileMult;
   let x = t.x, y = t.y, vx = 0, vy = 0;
   if (t.side === 'up') { y = b.y - 18; vy = speed; }
@@ -1122,7 +1179,8 @@ function launchMaskSpear(t) {
   // unblockable.)
   const trueSide = battle.maskMirrored ? SHIELD_OPPOSITE[t.side] : t.side;
   battle.spears.push({ x, y, vx, vy, side: trueSide, r: 8, family: t.family, kind: 'shard', lying: battle.maskMirrored, ...hazardAgeFields(5.0) });
-  tone(260, .025, 'square', .018);
+  // silent — see launchSpear/updateSpearHazards (hazards.js) for why.
+  if (!silent) tone(260, .025, 'square', .018);
 }
 // A slow drifting shard of the mask itself, floating in from a box edge
 // toward the center rather than launching like a spear — no wall, no sudden
@@ -1133,7 +1191,10 @@ function launchMaskSpear(t) {
 // independent timer alongside the spear cadence, giving Mask a second,
 // quieter kind of pressure instead of leaning entirely on spear volume for
 // difficulty.
-function spawnMaskShard(hard = false) {
+// Optional `family` tag, same convention as spawnWeavingBook/spawnEchoBook —
+// lets Convergence's mask cue despawn its own batch on capture (see
+// clearConvergenceCueHazards, erif.js).
+function spawnMaskShard(hard = false, family = null) {
   const b = battle.box, edge = (Math.random() * 4) | 0;
   // 20% further out (24 -> 28.8) — no telegraph before it's live.
   let x, y;
@@ -1144,7 +1205,7 @@ function spawnMaskShard(hard = false) {
   const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
   const a = Math.atan2(cy - y, cx - x);
   const speed = (hard ? 48 : 38) * DIFFICULTY.projectileMult;
-  battle.maskShards.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: 10, wobble: rand(0, Math.PI * 2), ...hazardAgeFields(20) });
+  battle.maskShards.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: 10, wobble: rand(0, Math.PI * 2), family, ...hazardAgeFields(20) });
   tone(210, .1, 'triangle', .02);
 }
 function updateMaskShards(dt) {

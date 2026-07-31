@@ -11,6 +11,65 @@ function ensureAudioCtx() {
   return audioCtx;
 }
 
+// A single shared analyser that every sound in the game passes through on
+// its way to the speakers (see the `.connect` calls in tone/kick/noiseHit
+// below, and the <audio>-element wiring in ensureErifTheme/ensureTrueTheme)
+// — real frequency data off whatever's actually playing, for the Reckoning's
+// tension visualizer (drawErifTensionVisualizer, render.js) to read every
+// frame via getVisualizerLevels, rather than a faked sine wobble.
+let visualizerAnalyser = null, visualizerData = null;
+function ensureVisualizerAnalyser() {
+  const ctx = ensureAudioCtx();
+  if (!visualizerAnalyser) {
+    visualizerAnalyser = ctx.createAnalyser();
+    // 512 (was 128) — 256 real frequency bins instead of 64, enough
+    // resolution to bucket into a genuine log scale below instead of
+    // several neighboring bars just repeating the same value.
+    visualizerAnalyser.fftSize = 512;
+    // .65 (was .78) — snappier response to actual note attacks/kicks now
+    // that there's enough real resolution for that detail to be worth
+    // showing, instead of blurring it into a slow average.
+    visualizerAnalyser.smoothingTimeConstant = .65;
+    // Tuned well below the Web Audio defaults (-100/-30 dB) — every sound in
+    // this game is a tiny-gain synthesized oscillator (see tone/kick/
+    // noiseHit's own vol constants, all well under .1 linear), nowhere near
+    // a mastered track's loudness. The default range left almost everything
+    // pinned near the silent end; this window actually spans this game's
+    // real quiet-to-loud range.
+    visualizerAnalyser.minDecibels = -75;
+    visualizerAnalyser.maxDecibels = -25;
+    visualizerAnalyser.connect(ctx.destination);
+    visualizerData = new Float32Array(visualizerAnalyser.frequencyBinCount);
+  }
+  return visualizerAnalyser;
+}
+// Buckets the analyser's frequency bins into `count` levels (0-1 each) for a
+// bar-per-bucket display, using a REAL logarithmic frequency scale (bin
+// boundary ~ bins^(i/count)) rather than the earlier squared-fraction
+// approximation — nearly all of this game's music sits in the low bins
+// (bass pulse + mid-range melody, see scheduleMusicStep), so a linear split
+// left every bar past the first one or two looking permanently dead.
+// getFloatFrequencyData (real dB float values) instead of the 8-bit-
+// quantized byte version, read against minDecibels/maxDecibels above once
+// those are actually tuned to this game's own quiet output — noticeably
+// finer, more accurate detail than the clamped byte data gave.
+function getVisualizerLevels(count) {
+  if (!visualizerAnalyser) return new Array(count).fill(0);
+  visualizerAnalyser.getFloatFrequencyData(visualizerData);
+  const bins = visualizerData.length;
+  const minDb = visualizerAnalyser.minDecibels, maxDb = visualizerAnalyser.maxDecibels;
+  const levels = new Array(count);
+  for (let i = 0; i < count; i++) {
+    const lo = Math.max(1, Math.floor(Math.pow(bins, i / count)));
+    const hi = Math.max(lo + 1, Math.floor(Math.pow(bins, (i + 1) / count)));
+    let sum = 0, n = 0;
+    for (let j = lo; j < Math.min(hi, bins); j++) { sum += visualizerData[j]; n++; }
+    const db = n ? sum / n : minDb;
+    levels[i] = clamp((db - minDb) / (maxDb - minDb), 0, 1);
+  }
+  return levels;
+}
+
 // `time`, when given, schedules the sound into the future on the Web Audio
 // clock (ctx.currentTime-based) instead of firing immediately — this is what
 // the music scheduler uses to stay seamless (see updateMusic below). One-shot
@@ -35,7 +94,7 @@ function tone(freq = 220, dur = .06, type = 'square', vol = .04, time = null, ca
     g.gain.setValueAtTime(.0001, t);
     g.gain.exponentialRampToValueAtTime(g0, t + attack);
     g.gain.exponentialRampToValueAtTime(.0001, t + dur);
-    o.connect(g); g.connect(ctx.destination);
+    o.connect(g); g.connect(ensureVisualizerAnalyser());
     o.start(t); o.stop(t + dur);
   } catch {}
 }
@@ -48,7 +107,7 @@ function kick(vol = .055, time = null, category = 'music') {
     o.type = 'sine'; o.frequency.setValueAtTime(165, t); o.frequency.exponentialRampToValueAtTime(42, t + .085);
     const g0 = Math.max(vol * (category === 'music' ? musicVolume : sfxVolume), .0001);
     g.gain.setValueAtTime(g0, t); g.gain.exponentialRampToValueAtTime(.0001, t + .1);
-    o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + .105);
+    o.connect(g); g.connect(ensureVisualizerAnalyser()); o.start(t); o.stop(t + .105);
   } catch {}
 }
 
@@ -61,7 +120,7 @@ function noiseHit(dur = .045, vol = .018, high = 1800, time = null, category = '
     const src = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), g = ctx.createGain();
     src.buffer = buf; filter.type = 'highpass'; filter.frequency.value = high;
     g.gain.value = vol * (category === 'music' ? musicVolume : sfxVolume);
-    src.connect(filter); filter.connect(g); g.connect(ctx.destination); src.start(t);
+    src.connect(filter); filter.connect(g); g.connect(ensureVisualizerAnalyser()); src.start(t);
   } catch {}
 }
 
@@ -135,6 +194,20 @@ const MUSIC = {
     notes: [0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 3, 3, -2, -2, -2, -2, -2, -2, -2, -2, 5, 5, 5, 5, 5, 5, 5, 5],
     kick: '00000000000000000000000000000000', snare: '00000000000000000000000000000000',
   },
+  // The main menu never had any music at all before — even quieter/slower
+  // than explore's own already-sparse drone (lower bpm, lower volMult, no
+  // kick/snare same as explore, so no percussive transients to pop at this
+  // volume), so it sits well under everything else without drawing
+  // attention to itself.
+  // bassWave: 'sine' instead of the default 'square' — a softer downbeat
+  // pulse, less pop-prone at this volume. Uneven block lengths (12/8/12
+  // instead of explore's flat 8/8/8/8) and different note values/contour so
+  // this doesn't just read as explore's own theme turned down.
+  title: {
+    bpm: 46, wave: 'sine', root: 88, volMult: .2662, bassWave: 'sine', // volMult +10% twice now
+    notes: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -2, -2, -2, -2, -2, -2, -2, -2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+    kick: '00000000000000000000000000000000', snare: '00000000000000000000000000000000',
+  },
 };
 
 let musicMode = null, musicStep = 0, nextNoteTime = 0;
@@ -165,10 +238,38 @@ const SCHEDULE_AHEAD = .35;
 // game's build), not a procedural one like every other theme — see the
 // missing 'erif' entry in MUSIC above. Lazily constructed since `Audio`
 // isn't available in every environment this file gets loaded in.
+// Seeks a just-loaded track to its real silent-intro-skipping start point
+// and, muted, actually plays a moment right there before pausing again —
+// setting .currentTime alone only tells the browser where to seek; it
+// doesn't guarantee real decoded audio is buffered and ready to go the
+// instant something calls .play() for real later. This forces that decode
+// to happen well ahead of time instead of setMusic('erif'/'erifTrue') eating
+// it live, which is what read as the track not starting instantly.
+function warmSeekPoint(audio, seekTime) {
+  try {
+    audio.currentTime = seekTime;
+    audio.muted = true;
+    audio.play().then(() => {
+      setTimeout(() => { try { audio.pause(); audio.currentTime = seekTime; audio.muted = false; } catch {} }, 150);
+    }).catch(() => {});
+  } catch {}
+}
 let erifThemeAudio = null;
 function ensureErifTheme() {
   if (!erifThemeAudio) {
-    try { erifThemeAudio = new Audio('assets/erif-theme.mp3'); erifThemeAudio.loop = true; erifThemeAudio.preload = 'auto'; }
+    try {
+      erifThemeAudio = new Audio('assets/erif-theme.mp3'); erifThemeAudio.loop = true; erifThemeAudio.preload = 'auto';
+      erifThemeAudio.addEventListener('loadedmetadata', () => warmSeekPoint(erifThemeAudio, .75));
+      // Routes this element's actual output through the shared analyser (see
+      // ensureVisualizerAnalyser above) instead of its own default output —
+      // createMediaElementSource claims the element's audio graph entirely,
+      // so from this point on it's only audible via wherever this source
+      // ends up connected (the analyser already connects onward to
+      // ctx.destination). Only ever done once per element — calling this
+      // twice on the same <audio> throws.
+      ensureVisualizerAnalyser();
+      ensureAudioCtx().createMediaElementSource(erifThemeAudio).connect(visualizerAnalyser);
+    }
     catch { erifThemeAudio = { play: () => Promise.resolve(), pause() {}, volume: 0, currentTime: 0, paused: true }; }
   }
   return erifThemeAudio;
@@ -183,12 +284,16 @@ function ensureTrueTheme() {
     try {
       trueThemeAudio = new Audio('assets/erif-true-theme.mp3'); trueThemeAudio.loop = true; trueThemeAudio.preload = 'auto';
       // Seeking a compressed MP3 mid-stream can stall for a moment while the
-      // browser locates/decodes that point — pre-seek here, way ahead of the
-      // actual fight, so the real setMusic('erifTrue') call (fired the instant
-      // the player presses space to start the Reckoning) doesn't eat that
-      // latency and can play() instantly instead of appearing to wait on the
-      // arena box's grow animation.
-      trueThemeAudio.addEventListener('loadedmetadata', () => { try { trueThemeAudio.currentTime = 2; } catch {} });
+      // browser locates/decodes that point — pre-seek (and pre-warm, see
+      // warmSeekPoint above) here, way ahead of the actual fight, so the real
+      // setMusic('erifTrue') call (fired the instant the player presses space
+      // to start the Reckoning) doesn't eat that latency and can play()
+      // instantly instead of appearing to wait on the arena box's grow
+      // animation.
+      trueThemeAudio.addEventListener('loadedmetadata', () => warmSeekPoint(trueThemeAudio, 2.5));
+      // Same analyser routing as ensureErifTheme above.
+      ensureVisualizerAnalyser();
+      ensureAudioCtx().createMediaElementSource(trueThemeAudio).connect(visualizerAnalyser);
     }
     catch { trueThemeAudio = { play: () => Promise.resolve(), pause() {}, volume: 0, currentTime: 0, paused: true }; }
   }
@@ -220,10 +325,11 @@ function setMusic(name) {
     musicFadeMult = 1;
     try {
       const a = ensureTrueTheme();
-      // A longer silent lead-in than ensureErifTheme's own track above (2s
-      // vs .75s) — a different mastered MP3, opens with more near-silence
-      // before the track actually starts, which read as playback lag.
-      a.volume = musicVolume * .15; a.currentTime = 2;
+      // A longer silent lead-in than ensureErifTheme's own track above (2.5s
+      // vs .75s, nudged up from 2s — still not quite past the silent intro)
+      // — a different mastered MP3, opens with more near-silence before the
+      // track actually starts, which read as playback lag.
+      a.volume = musicVolume * .15; a.currentTime = 2.5;
       a.play().catch(() => {});
     } catch {}
   }
@@ -255,7 +361,9 @@ function scheduleMusicStep(song, t) {
   tone(note, step * 1.7, song.wave, (song.heavy ? .015 : .0115) * vm, t, 'music');
   // A steady root-octave bass pulse under every downbeat is what actually
   // carries a groove — kept simple on purpose, no extra harmonic clutter.
-  if (i % 8 === 0) tone(note / 2, step * 3.2, 'square', .011 * vm, t, 'music');
+  // bassWave lets a quiet track (title) swap the default square (sharper,
+  // more "pop"-prone attack character) for something softer instead.
+  if (i % 8 === 0) tone(note / 2, step * 3.2, song.bassWave ?? 'square', .011 * vm, t, 'music');
   // A soft sustained pad under each 16-step half-phrase, for a bit of air.
   if (i === 0 || i === 16) tone(song.root * Math.pow(2, (transpose + 12) / 12), step * 7, 'sine', .0045 * vm, t, 'music');
 

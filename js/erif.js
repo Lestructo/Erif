@@ -214,7 +214,7 @@ function updateRepriseHourglass(dt) {
   }
 
   battle.sandGrainTimer -= dt;
-  if (battle.sandGrainTimer <= 0) { spawnSandGrain(true); battle.sandGrainTimer = .22 / battle.timeScale; }
+  if (battle.sandGrainTimer <= 0) { spawnSandGrain(true); battle.sandGrainTimer = .22 / 1.1 / battle.timeScale; } // 10% more often, matching updateHourglass (bosses.js)
   updateSandGrains(dt);
 
   battle.hourglassOrbTimer -= dt;
@@ -396,15 +396,20 @@ function spawnConvergenceAimedBullet() {
   const a = Math.atan2(s.y - y, s.x - x) + rand(-.13, .13), speed = 160 * DIFFICULTY.projectileMult;
   battle.aimedBullets.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: 4, ...hazardAgeFields(10) });
 }
-function spawnConvergenceSpears(family, hard = false, forcedSide = null, extraDelay = 0) {
+// thin — a flat 25% spear-count cut, Reckoning-only (see fireFingerShot's
+// executioner cue below) and executioner-only (mask shares this same
+// function but already has its own separate reduction, the .5 chance around
+// this call skipping it entirely — stacking this on top of that would double
+// -nerf mask specifically, which was never asked for).
+function spawnConvergenceSpears(family, hard = false, forcedSide = null, extraDelay = 0, thin = false) {
   const before = battle.telegraphs.length;
   // Same gapped-bias fix as updateExecutioner (bosses.js) — this is the
   // executioner/mask cue's own spear volley, and since the Reckoning now
   // fires it once per finger-charge (see fireFingerShot, erif.js), a hand
   // carrying either of those wards was throwing a full solid wall on
   // basically every single shot. Spaced barrages are the common case now.
-  if (Math.random() < .65) spawnSpearGappedWall(hard, choose([5, 7]), forcedSide, extraDelay);
-  else spawnSpearVolley(hard, forcedSide, extraDelay);
+  if (Math.random() < .65) spawnSpearGappedWall(hard, choose(thin ? [4, 5] : [5, 7]), forcedSide, extraDelay);
+  else spawnSpearVolley(hard, forcedSide, extraDelay, thin ? 1.25 : 1);
   // Occasionally layer a second, adjacent-side needle burst for variety —
   // needles are dodged by position, not a shield read, so stacking one onto
   // the forced-direction volley doesn't demand two simultaneous shield reads.
@@ -435,8 +440,23 @@ function spawnConvergenceCueHazard(cue, target, reckoning = false) {
     // silently resolving as honest steel every time despite still being
     // *tagged* mirror-eligible (see spawnConvergenceSpears). A coin flip
     // here gives it a real chance to actually lie, same as its own fight.
-    if (cue === 'mask') battle.maskMirrored = Math.random() < .5;
-    spawnConvergenceSpears(cue, false, side, .10);
+    if (cue === 'mask') {
+      battle.maskMirrored = Math.random() < .5;
+      // Half as many spear volleys as before for mask specifically — a
+      // missed roll just skips this trigger's spears entirely (still costs
+      // the finger charge as normal), executioner's own rate is untouched.
+      // The mask's OTHER hazard, its drifting shards (spawnMaskShard,
+      // bosses.js), never actually fired through this ward dispatch at
+      // all — added below so mask isn't just spears/"arrows" here.
+      if (Math.random() < .5) spawnConvergenceSpears(cue, false, side, .10);
+      // 75% chance, not guaranteed — a flat 25% cut to how many of these
+      // actually spawn per trigger.
+      if (Math.random() < .75) spawnMaskShard(false, cue);
+    } else {
+      // thin=reckoning — the 25% spear-count cut only applies to the
+      // Reckoning's own executioner ward, not Convergence/Final Convergence.
+      spawnConvergenceSpears(cue, false, side, .10, reckoning);
+    }
   } else if (cue === 'hourglass') {
     // Hourglass hasn't used spears since its own fight was redesigned
     // around sand grains + drifting orbs (see updateHourglass, bosses.js) —
@@ -464,8 +484,9 @@ function spawnConvergenceCueHazard(cue, target, reckoning = false) {
     // equivalent to what a real gust actually delivers, plus an actual
     // wind-line row (see spawnWindRow, bosses.js) — this cue was only ever
     // spawning flags, never the wind trails, since updateFinalConvergence
-    // didn't call updateWindLines either (fixed there too).
-    for (let i = 0; i < 2; i++) {
+    // didn't call updateWindLines either (fixed there too). Bumped 2 -> 3
+    // (+50%) since they were barely showing up against everything else.
+    for (let i = 0; i < 3; i++) {
       spawnGaleFlag(false);
       battle.galeFlags[battle.galeFlags.length - 1].family = cue;
     }
@@ -477,18 +498,34 @@ function spawnConvergenceCueHazard(cue, target, reckoning = false) {
       const tx = lerp(battle.soul.x, target.x, .45) + rand(-35, 35), ty = lerp(battle.soul.y, target.y, .45) + rand(-35, 35);
       const ang = Math.atan2(ty - a[1], tx - a[0]);
       const witnessSpeed = 190 * DIFFICULTY.projectileMult;
-      battle.shapes.push({ type: ['circle', 'triangle', 'square'][i % 3], x: a[0], y: a[1], vx: Math.cos(ang) * witnessSpeed, vy: Math.sin(ang) * witnessSpeed, size: 7, spin: rand(-4, 4), a: 0, life: 3.2, family: 'witness' });
+      // 3.2, then 9, were both still sized off hard-tier speed only — at
+      // Normal tier (DIFFICULTY.projectileMult=.5, half hard's .75) this same
+      // cue also fires in Final Convergence's smaller 680x390 box, where 9s
+      // at 190*.5=95px/s only covers 855px against that box+margin's own
+      // ~1032px diagonal, still expiring mid-flight before the position
+      // despawn ever gets a chance. 13s clears every box/tier combo in play,
+      // Reckoning included.
+      battle.shapes.push({ type: ['circle', 'triangle', 'square'][i % 3], x: a[0], y: a[1], vx: Math.cos(ang) * witnessSpeed, vy: Math.sin(ang) * witnessSpeed, size: 7, spin: rand(-4, 4), a: 0, life: 13, family: 'witness' });
     });
   } else if (cue === 'archivist') {
     // The archive scatters its torn pages outward from its own sigil,
     // reusing the shape-hazard primitive rather than a second sigil system.
     for (let i = 0; i < 4; i++) {
       const ang = rand(0, Math.PI * 2), speed = 170 * DIFFICULTY.projectileMult;
-      battle.shapes.push({ type: choose(['circle', 'triangle', 'square']), x: target.x, y: target.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, size: 7, spin: rand(-4, 4), a: 0, life: 2.6, family: 'archivist' });
+      // Same fix as the witness cue just above — even 10s was only checked
+      // against hard-tier speed; at Normal (170*.5=85px/s) it covers 850px
+      // against Final Convergence's own ~1032px box+margin diagonal, still
+      // dying early. 14s clears every box/tier combo, Reckoning included.
+      battle.shapes.push({ type: choose(['circle', 'triangle', 'square']), x: target.x, y: target.y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, size: 7, spin: rand(-4, 4), a: 0, life: 14, family: 'archivist' });
     }
     // Plus the same weaving-book-and-trail pressure the standalone trial
-    // now uses (see bosses.js) — a single one is plenty for a one-shot cue.
-    spawnWeavingBook(false, cue);
+    // now uses (see bosses.js). Used to always spawn a (red) weaving book
+    // and never a (white) echo book, so this cue only ever showed red —
+    // halved the weaving-book chance and added a smaller independent chance
+    // of a regular echo book too, so both actually show up. White-book odds
+    // bumped .25 -> .3125 (+25%), still too rare otherwise.
+    if (Math.random() < .5) spawnWeavingBook(false, cue);
+    if (Math.random() < .3125) spawnEchoBook(false, cue);
   } else { // oracle
     // Was 1.65s of thin ink-rain — barely noticeable next to every other
     // cue's actual hazard entities (orbs, spears, shapes...), so this reads
@@ -503,6 +540,7 @@ function clearConvergenceCueHazards(cue) {
   else if (cue === 'executioner' || cue === 'mask') {
     battle.telegraphs = battle.telegraphs.filter(t => t.family !== cue);
     battle.spears = battle.spears.filter(p => p.family !== cue);
+    if (cue === 'mask') battle.maskShards = battle.maskShards.filter(w => w.family !== cue);
   } else if (cue === 'hourglass') {
     battle.hourglassOrbs = battle.hourglassOrbs.filter(o => o.family !== cue);
   } else if (cue === 'gale') {
@@ -512,6 +550,7 @@ function clearConvergenceCueHazards(cue) {
     if (cue === 'archivist') {
       battle.weavingBooks = battle.weavingBooks.filter(w => w.family !== cue);
       battle.trailSquares = battle.trailSquares.filter(t => t.family !== cue);
+      battle.echoBooks = battle.echoBooks.filter(w => w.family !== cue);
     }
   } else { // oracle
     battle.bullets = []; battle.inkTimer = 0; battle.inkSpawn = 0; battle.q = null; battle.lasers = [];
@@ -607,9 +646,14 @@ function updateConvergence(dt) {
   // own update loops run somewhere, which Convergence never did before since
   // it never used to spawn any of these. updateWindLines specifically was
   // still missing even after the others were added — the gale cue's own
-  // wind-line row spawned once and then just sat there motionless.
+  // wind-line row spawned once and then just sat there motionless. Same bug,
+  // same fix, for the archivist cue's echo books (spawnEchoBook) and the
+  // mask cue's drifting shards (spawnMaskShard) — spawning them without ever
+  // calling their own update function left them frozen in place, reading as
+  // broken rather than tumbling/drifting in.
   updateHourglassOrbs(dt); updateGaleFlags(dt); updateWindLines(dt);
-  updateWeavingBooks(dt); updateTrailSquares(dt);
+  updateEchoBooks(dt); updateWeavingBooks(dt); updateTrailSquares(dt);
+  updateMaskShards(dt);
 }
 
 // ---- Enrage dialogue interstitial (Convergence -> Enraged) ----
@@ -653,7 +697,12 @@ function startErifEnrageDialogue() {
 function spawnEnragedShard() {
   const h = choose(battle.hands), s = battle.soul;
   const a = Math.atan2(s.y - h.y, s.x - h.x) + rand(-.18, .18), speed = 178 * DIFFICULTY.projectileMult;
-  battle.shapes.push({ type: choose(['circle', 'triangle', 'square']), x: h.x, y: h.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, size: 7, spin: rand(-5, 5), a: 0, life: 3.4 });
+  // 3.4, then 7, were both only checked against hard-tier speed — Enraged
+  // isn't tier-gated, so Normal tier reaches it too, and at 178*.5=89px/s a
+  // life of 7 only covers 623px against the widened 680x390 box
+  // (ERIF_ENRAGE_BOX) + margin's own ~1032px diagonal, well short. 14s clears
+  // it at both tiers.
+  battle.shapes.push({ type: choose(['circle', 'triangle', 'square']), x: h.x, y: h.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, size: 7, spin: rand(-5, 5), a: 0, life: 14 });
   h.tx = s.x; h.ty = s.y;
 }
 // The arena widens once Enraged begins, and stays that size through Final
@@ -775,7 +824,7 @@ function updateOneShotGaleGust(dt, hard, usedField, timerField, requireGaleCue =
   } else if (battle.galeGustPhase === 'active') {
     const b = battle.box, s = battle.soul;
     s.x = clamp(s.x + battle.windVX * dt, b.x + s.r, b.x + b.w - s.r);
-    s.y = clamp(s.y + battle.windVY * dt, b.y + s.r, b.y + b.h - s.r);
+    s.y = clamp(s.y + battle.windVY * dt, b.y + s.r, b.y + b.h - soulVisualBottomMargin());
     battle.galeGustTimer -= dt;
     if (battle.galeGustTimer <= 0) { endGaleGust(hard); battle[usedField] = true; }
   }
@@ -1077,9 +1126,13 @@ function updateFinalConvergence(dt) {
   battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20 && !hazardExpired(p.ageExpireT));
   updateRingHazards(dt); updateSpearHazards(dt, true); updateShapeHazards(dt, true);
   // Hourglass/Gale cues now spawn real sand/orbs/flags/wind rows (see
-  // spawnConvergenceCueHazard) — need their own update loops run.
+  // spawnConvergenceCueHazard) — need their own update loops run. Same for
+  // the archivist cue's echo books (spawnEchoBook) and the mask cue's
+  // drifting shards (spawnMaskShard) — without their own update calls they
+  // spawn in and just sit there frozen, never tumbling/drifting.
   updateSandGrains(dt); updateHourglassOrbs(dt); updateGaleFlags(dt); updateWindLines(dt);
-  updateWeavingBooks(dt); updateTrailSquares(dt);
+  updateEchoBooks(dt); updateWeavingBooks(dt); updateTrailSquares(dt);
+  updateMaskShards(dt);
 }
 
 // ---- Victory sequence ----
@@ -1200,6 +1253,23 @@ const HAND_HIT_COOLDOWN = .4;
 // come back with a new ward — the actual re-equip still queues behind
 // EQUIP_TIME/EMERGE_* below on top of this, same as it always has.
 const HAND_RECHARGE_TIME = 5;
+// A little flavor detour: instead of rejoining the fight the instant it
+// finishes recharging, a broken hand has a 40% chance to wander down to the
+// volume meters (see VOL_METER/volMeterRect, render.js) and crank the music
+// slider to max first, "helping" before it gets back to the fight — never
+// happens if the music's already maxed, since there'd be nothing to turn
+// up. See startErifVolumeTrip and the 'volumeTripDown'/'volumeTripPress'/
+// 'volumeTripUp' states in updateErifHand.
+const ERIF_VOLUME_TRIP_CHANCE = .55;
+const ERIF_VOLUME_TRIP_PRESS_TIME = 1.1; // how long the finger lingers on the bar before heading back
+// Own min/max travel-time bounds rather than reusing EMERGE_*/RETRACT_TIME —
+// those are tuned for the short emerge-from-dock/retreat-to-dock hops, but
+// the volume meters sit in a fixed screen corner that can be far from
+// wherever the hand currently is (especially in the Reckoning's own big
+// arena), so a wide-enough cap here keeps the travel speed looking
+// consistent regardless of distance instead of being squeezed into a too-
+// short window and reading as an unnaturally fast dash.
+const ERIF_VOLUME_TRIP_MIN_TIME = .6, ERIF_VOLUME_TRIP_MAX_TIME = 3.5;
 const ERIF_HEAD_SCALE = .85; // read by render.js's drawErifHeadHUD too
 const RECKONING_TIME_LIMIT = 135, RECKONING_FADE_WINDOW = 5;
 
@@ -1234,7 +1304,7 @@ const SLAM_COOLDOWN = [3, 6];
 const CHASE_SPEED = 260, CHASE_TURN_RATE = 3.0, CHASE_MAX_TIME = 1.1, SLAM_ENGAGE_RANGE = 64;
 const SLAM_TELEGRAPH_TIME = .55;
 const HAND_VULNERABLE_TIME = 2.0;
-const RETRACT_SPEED = 480, RETRACT_MIN_TIME = .35, RETRACT_MAX_TIME = 1.1;
+const RETRACT_SPEED = 480, RETRACT_TURN_RATE = 6, RETRACT_SLOW_RADIUS = 140;
 // Shared across both hands (battle.erifSlamLockoutT) — set the instant
 // either hand COMMITS to a chase (not at impact), so the other can't start
 // its own chase-and-slam until this clears. Setting it this early, rather
@@ -1250,7 +1320,11 @@ const SLAM_STAGGER_TIME = 6;
 // reachMax — the visible "filling up" cue) and fires on its own timer,
 // spreading a single ward's attack across 4 origins instead of one wrist.
 const HAND_FINGERS = [
-  { angle: -1.15, thumb: true, reachMin: 20, reachMax: 32 },
+  // reachMax bumped 32 -> 40 (reachMin nudged along with it, 20 -> 24) — at
+  // the old 32 it only cleared the hand's own 30px body circle by 2px, so
+  // whatever it fired often still visually clipped under the hand right at
+  // the moment of release instead of clearly emerging from the fingertip.
+  { angle: -1.15, thumb: true, reachMin: 24, reachMax: 40 },
   { angle: -0.32, thumb: false, reachMin: 28, reachMax: 46 },
   { angle: 0, thumb: false, reachMin: 30, reachMax: 50 },
   { angle: 0.32, thumb: false, reachMin: 28, reachMax: 46 },
@@ -1270,8 +1344,23 @@ const FINGER_STAGGER = [0, .8, 1.6, 2.4];
 // the same effect; a finger that rolls one of these on cooldown fires a
 // bounce ball instead, so no charge is ever wasted.
 const GLOBAL_WARD_COOLDOWN = 2.5;
+// Gale-only extra throttle on top of the shared cooldown above (see
+// fireFingerShot) — was 50% more than GLOBAL_WARD_COOLDOWN (gale's own gust
+// was chaining almost back-to-back off the shared 2.5s alone), bumped
+// another 50% on top of that (x1.5 -> x2.25) since it was still coming too
+// often.
+const GALE_COOLDOWN = GLOBAL_WARD_COOLDOWN * 2.25;
 const BOUNCE_BALL_CHANCE = 0.225;
 const BOUNCE_BALL_SPEED = 210, BOUNCE_BALL_R = 6.5;
+// A rarer, heavier finger-shot variant — visually a faceted judgment gem
+// (see gemEye/drawErifGemShard, render.js) instead of a plain bounce ball:
+// 25% larger, originally 25% slower (then another 25% off that, .75 -> .5625)
+// and originally a 15% chance (then another 25% off that, .15 -> .1125) —
+// never bounces off the arena walls (dead straight instead), and shatters —
+// breaks and disappears — the instant it actually lands a hit, rather than
+// surviving to keep going like the bounce ball does.
+const ERIF_GEM_SHARD_CHANCE = 0.1125;
+const ERIF_GEM_SHARD_SPEED = BOUNCE_BALL_SPEED * .5625, ERIF_GEM_SHARD_R = BOUNCE_BALL_R * 1.25;
 // An "eye" pops out and joins the fight permanently each time a hand break
 // docks a point off Erif's head HP (see handleErifPunch) — up to 8 over the
 // fight, one per ward. Same wall-bounce physics as the bounce ball above,
@@ -1291,8 +1380,10 @@ function erifHomeAnchor() {
   // toward the gale gust's arena-centered wind arrow (drawBattle,
   // render.js), which reads there specifically because it's centered in
   // the box. This high leaves real clearance below for both the arrow and
-  // the hands' own wandering room.
-  return { x: b.x + b.w * .5, y: b.y + b.h * .14 };
+  // the hands' own wandering room. Nudged back down 10% (.14 -> .154) — a
+  // small correction, not a reversal of the above; still comfortably clear
+  // of the wind arrow.
+  return { x: b.x + b.w * .5, y: b.y + b.h * .154 };
 }
 function handDockPos(index) {
   const home = erifHomeAnchor();
@@ -1322,6 +1413,30 @@ function updateHandTravel(hand, dt) {
   hand.y = lerp(hand.travelFrom.y, hand.travelTo.y, p);
   return hand.travelT >= hand.travelDur;
 }
+// Where the hand's own palm needs to sit (and which way it needs to face)
+// so its pointer finger (HAND_FINGERS[2] — the straight-ahead one, angle 0)
+// lands exactly on the music slider's 10th/rightmost bar once fully
+// extended, facing straight down (Math.PI/2, screen y grows downward).
+// Palm sits reachMax above the bar so the fingertip — not the palm — is
+// what actually touches it.
+function erifVolumeTripTarget() {
+  const mr = volMeterRect(1); // row 1 = the music row (see VOL_ROWS, render.js)
+  const barX = mr.x + (VOL_METER.count - 1) * (VOL_METER.blockW + VOL_METER.gap) + VOL_METER.blockW / 2;
+  const barY = mr.y + VOL_METER.blockH / 2;
+  return { x: barX, y: barY - HAND_FINGERS[2].reachMax, facing: Math.PI / 2 };
+}
+// See ERIF_VOLUME_TRIP_CHANCE's own comment — called from the 'recharging'
+// branch below instead of re-equipping immediately.
+function startErifVolumeTrip(hand) {
+  const target = erifVolumeTripTarget();
+  startHandTravel(hand, { x: hand.x, y: hand.y }, { x: target.x, y: target.y }, EMERGE_SPEED, ERIF_VOLUME_TRIP_MIN_TIME, ERIF_VOLUME_TRIP_MAX_TIME);
+  hand.volumeTripFacing = target.facing;
+  // Retracted here rather than left at whatever mid-charge point the hand
+  // happened to break at — 'volumeTripPress' only ever extends the pointer
+  // finger (index 2) back out, so the others need a clean starting point.
+  hand.fingers.forEach((f, i) => { f.chargeT = FINGER_STAGGER[i]; f.reach = HAND_FINGERS[i].reachMin; });
+  hand.state = 'volumeTripDown';
+}
 function pickWanderTarget(hand) {
   hand.wanderTarget = randWanderPoint();
   hand.wanderRepickT = rand(WANDER_REPICK_TIME[0], WANDER_REPICK_TIME[1]);
@@ -1336,6 +1451,21 @@ function steerHandToward(hand, target, speed, turnRate, dt) {
   hand.x += Math.cos(hand.facing) * speed * dt;
   hand.y += Math.sin(hand.facing) * speed * dt;
   clampHandToBox(hand);
+}
+// Same idea as steerHandToward, plus an "arrival" speed taper as the hand
+// nears a STATIC point (the dock) — used by 'retreating'/'volumeTripUp'
+// instead of the plain version above. Without the taper, a fast hand with a
+// speed/turnRate ratio bigger than the arrival radius physically can't turn
+// tightly enough to close the last stretch — it overshoots, curves back
+// around, overshoots again, and orbits the dock forever instead of ever
+// landing on it. Slowing down on approach shrinks the turning radius right
+// along with the remaining distance, so it actually converges. Returns the
+// live distance to target so the caller can do its own arrival check.
+function steerHandToArrival(hand, target, maxSpeed, turnRate, dt, slowRadius) {
+  const d = dist(hand.x, hand.y, target.x, target.y);
+  const speed = maxSpeed * clamp(d / slowRadius, .12, 1);
+  steerHandToward(hand, target, speed, turnRate, dt);
+  return d;
 }
 
 // A bare hand shell — actually wearing a ward and joining the fight happens
@@ -1357,8 +1487,11 @@ function makeErifHand(id) {
     slamCooldownT: 0,
     slamTargetX: 0, slamTargetY: 0, // frozen at telegraph-start so the slam itself is dodgeable
     globalWardCooldownT: 0,
+    galeCooldownT: 0, // extra throttle on top of globalWardCooldownT, gale only — see fireFingerShot
     travelFrom: null, travelTo: null, travelT: 0, travelDur: 0,
     fingers: HAND_FINGERS.map((cfg, i) => ({ chargeT: FINGER_STAGGER[i], reach: cfg.reachMin })),
+    volumeTripFacing: 0, // target facing for the 'volumeTripDown' travel — see startErifVolumeTrip
+    volumeTripPressed: false, // guards musicVolume actually getting set to 1 exactly once per trip
   };
 }
 // Resets a hand in place to start a fresh bout wearing `ward` — the one
@@ -1375,6 +1508,7 @@ function beginHandBout(hand, ward) {
   hand.slamCooldownT = 0;
   hand.slamTargetX = 0; hand.slamTargetY = 0;
   hand.globalWardCooldownT = 0;
+  hand.galeCooldownT = 0;
   hand.travelFrom = null; hand.travelTo = null; hand.travelT = 0; hand.travelDur = 0;
   hand.fingers = HAND_FINGERS.map((cfg, i) => ({ chargeT: FINGER_STAGGER[i], reach: cfg.reachMin }));
   tone(CONVERGENCE_CUE_TONE[ward], .12, 'triangle', .04); // same per-family identifying cue every other ward-reload moment uses
@@ -1429,6 +1563,29 @@ function updateErifBounceBalls(dt) {
   battle.erifBounceBalls = battle.erifBounceBalls.filter(b => !b.dead);
 }
 
+// ---- Gem shard: the rarer, heavier finger-shot variant above. Travels
+// dead straight (no wall-bounce) and shatters on the very first thing it
+// hits instead of surviving to keep going. ----
+function spawnErifGemShard(x, y, aimX, aimY) {
+  const a = Math.atan2(aimY - y, aimX - x) + rand(-.7, .7);
+  const speed = ERIF_GEM_SHARD_SPEED * DIFFICULTY.projectileMult;
+  battle.erifGemShards.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: ERIF_GEM_SHARD_R, spin: rand(-2, 2), ...hazardAgeFields(8) });
+  tone(340, .07, 'triangle', .025);
+}
+function updateErifGemShards(dt) {
+  const b = battle.box;
+  for (const s of battle.erifGemShards) {
+    s.x += s.vx * dt; s.y += s.vy * dt;
+    if (convergenceCircleHit(s, s.r)) {
+      s.dead = true; hurt();
+      spawnSparks(s.x, s.y, 9, { color: '#fff', speed: [70, 150], life: .35 });
+      tone(200, .08, 'sawtooth', .03);
+    }
+  }
+  battle.erifGemShards = battle.erifGemShards.filter(s => !s.dead && !hazardExpired(s.ageExpireT) &&
+    s.x > b.x - 40 && s.x < b.x + b.w + 40 && s.y > b.y - 40 && s.y < b.y + b.h + 40);
+}
+
 // One of Erif's own eyes, popped out at the moment a hand break docks a
 // point off his head HP — spawns from the head's live position in a random
 // direction and bounces off battle.box's edges forever (no break-after-2nd-
@@ -1470,17 +1627,44 @@ function fingerTipPos(hand, i) {
 function fireFingerShot(hand, x, y) {
   const ward = hand.ward, s = battle.soul;
   if (ward === 'oracle' || ward === 'gale' || ward === 'verdict') {
-    if (hand.globalWardCooldownT <= 0) {
+    // Gale gets an extra throttle (galeCooldownT) on top of the shared
+    // globalWardCooldownT — the gust's own telegraph+active duration
+    // (~2.3s) was close enough to the shared 2.5s cooldown that a new one
+    // could start almost the instant the last ended, reading as spammed,
+    // without oracle/verdict having the same complaint. GALE_COOLDOWN (3.75,
+    // 50% more than the shared 2.5s) is the real effective gap for gale now.
+    if (hand.globalWardCooldownT <= 0 && (ward !== 'gale' || hand.galeCooldownT <= 0)) {
       hand.globalWardCooldownT = GLOBAL_WARD_COOLDOWN;
       if (ward === 'oracle') { battle.inkTimer = 1.7; battle.inkSpawn = 0; }
-      else if (ward === 'gale') { beginGaleGust(true); }
-      else { spawnRing(true, rand(0, Math.PI * 2), 300, choose([-1, 1]) * .9, 150, .42, 2); }
+      else if (ward === 'gale') { beginGaleGust(true); hand.galeCooldownT = GALE_COOLDOWN; }
+      else {
+        // Was a single hardcoded plain ring (2 gaps) regardless of anything
+        // else — completely bypassed updateVerdict's own equal-odds
+        // plain/close-burst/spaced-burst dispatch, so the Reckoning's verdict
+        // ward never actually showed the two burst variations at all, no
+        // matter what was tuned on the standalone trial's side. Same equal
+        // 1/3 odds as updateVerdict now, reusing its actual spawn functions.
+        // Centered on the player's own current position (not passed at all
+        // on the standalone trial's side, where box-center is the intended
+        // "close in from the fixed middle" mechanic) — the Reckoning's box
+        // is nearly 5x the area of that trial's own, so a box-centered ring
+        // could spawn its danger-boundary crossing right on top of a player
+        // standing off in a corner, with zero warning.
+        const origin = { x: s.x, y: s.y };
+        const roll = Math.random();
+        if (roll < 1 / 3) spawnVerdictRing(true, origin);
+        else if (roll < 2 / 3) spawnVerdictCloseBurst(true, origin);
+        else spawnVerdictSpacedBurst(true, origin);
+      }
+    } else if (Math.random() < ERIF_GEM_SHARD_CHANCE) {
+      spawnErifGemShard(x, y, s.x, s.y);
     } else {
       spawnErifBounceBall(x, y, s.x, s.y);
     }
   } else {
     spawnConvergenceCueHazard(ward, { x, y }, true);
-    if (Math.random() < BOUNCE_BALL_CHANCE) spawnErifBounceBall(x, y, s.x, s.y);
+    if (Math.random() < ERIF_GEM_SHARD_CHANCE) spawnErifGemShard(x, y, s.x, s.y);
+    else if (Math.random() < BOUNCE_BALL_CHANCE) spawnErifBounceBall(x, y, s.x, s.y);
   }
 }
 // Only ticks while a hand is 'wandering' (its only caller) — frozen, not
@@ -1515,6 +1699,18 @@ function updateErifHand(hand, dt) {
     // never drift out of sync if the box is still animating.
     const dock = handDockPos(hand.id);
     hand.x = dock.x; hand.y = dock.y;
+    if (hand.state === 'recharging') {
+      // A gentle idle drift while parked recharging — this used to sit
+      // perfectly still for the full HAND_RECHARGE_TIME, which read as
+      // frozen/broken next to a boss whose every other state is constantly
+      // moving. Phase-offset per hand (hand.id) so the two don't bob in
+      // lockstep, small enough that it still reads as "resting near Erif"
+      // rather than wandering off.
+      const t = battle.t + hand.id * 1.7;
+      hand.x += Math.sin(t * 1.3) * 14;
+      hand.y += Math.cos(t * 0.9) * 10;
+      hand.facing = Math.sin(t * 0.6) * .15;
+    }
   }
   hand.hitCooldownT = Math.max(0, hand.hitCooldownT - dt);
   hand.stateT -= dt;
@@ -1538,6 +1734,7 @@ function updateErifHand(hand, dt) {
     if (hand.wanderRepickT <= 0 || dist(hand.x, hand.y, hand.wanderTarget.x, hand.wanderTarget.y) < 20) pickWanderTarget(hand);
     updateErifHandFingers(hand, dt);
     hand.globalWardCooldownT = Math.max(0, hand.globalWardCooldownT - dt);
+    hand.galeCooldownT = Math.max(0, hand.galeCooldownT - dt);
     hand.slamCooldownT -= dt;
     // Also gated on the shared slam lockout (battle.erifSlamLockoutT) — a
     // hand whose own cooldown is ready just waits here, still
@@ -1585,10 +1782,16 @@ function updateErifHand(hand, dt) {
       pickWanderTarget(hand);
     }
   } else if (hand.state === 'retreating') {
-    // Purely the visual travel back toward Erif for a clean exit after
-    // breaking — the actual "how long until it can act again" cooldown is
-    // the 'recharging' state below, entered once this arrives.
-    if (updateHandTravel(hand, dt)) { hand.state = 'recharging'; hand.stateT = HAND_RECHARGE_TIME; }
+    // Continuously re-targets the LIVE dock position every frame (which
+    // itself follows the boss's own drifting head anchor — see
+    // erifHomeAnchor/handDockPos) instead of a one-time snapshot taken the
+    // instant the retreat began. The head keeps drifting for the whole
+    // fight, so a frozen target used to leave the hand visibly popping
+    // into alignment only once it hit 'recharging' below and got pinned to
+    // the (by-then different) live dock — this way it tracks smoothly.
+    const dock = handDockPos(hand.id);
+    const d = steerHandToArrival(hand, dock, RETRACT_SPEED, RETRACT_TURN_RATE, dt, RETRACT_SLOW_RADIUS);
+    if (d < 16) { hand.state = 'recharging'; hand.stateT = HAND_RECHARGE_TIME; }
   } else if (hand.state === 'recharging') {
     if (hand.stateT <= 0) {
       // Draws a fresh ward and rejoins on its own — fully independent of
@@ -1596,6 +1799,50 @@ function updateErifHand(hand, dt) {
       // the pool's ever actually empty (shouldn't happen in practice, since
       // ERIF_HEAD_HP equals the ward count and the fight ends on the 8th
       // break, before an 9th recharge could ever complete).
+      if (battle.erifWardPool.length) {
+        // See ERIF_VOLUME_TRIP_CHANCE's own comment — a chance to detour
+        // down to the volume meters before actually rejoining, skipped
+        // entirely once the music's already at max. Also gated off the
+        // first 2 wards broken (battle.erifWardsDestroyed) — the earliest
+        // this can ever trigger is the 3rd hand to recharge, not the very
+        // first one, so it doesn't show up right at the start of the fight.
+        if (battle.erifWardsDestroyed >= 3 && musicVolume < 1 && Math.random() < ERIF_VOLUME_TRIP_CHANCE) startErifVolumeTrip(hand);
+        else beginHandBout(hand, battle.erifWardPool.pop());
+      } else hand.state = 'gone';
+    }
+  } else if (hand.state === 'volumeTripDown') {
+    // Turns to face the bar over the course of the travel rather than
+    // snapping instantly, same easing feel as the rest of this state
+    // machine's own transitions.
+    const da = Math.atan2(Math.sin(hand.volumeTripFacing - hand.facing), Math.cos(hand.volumeTripFacing - hand.facing));
+    hand.facing += da * Math.min(1, dt * 3);
+    if (updateHandTravel(hand, dt)) {
+      hand.facing = hand.volumeTripFacing;
+      hand.state = 'volumeTripPress'; hand.stateT = ERIF_VOLUME_TRIP_PRESS_TIME;
+      hand.volumeTripPressed = false;
+    }
+  } else if (hand.state === 'volumeTripPress') {
+    // Only the pointer finger (index 2, the straight-ahead one) extends —
+    // the others stay retracted, reading as a single deliberate press
+    // rather than the usual all-fingers wandering fan.
+    const pct = 1 - clamp(hand.stateT / ERIF_VOLUME_TRIP_PRESS_TIME, 0, 1);
+    hand.fingers[2].reach = lerp(HAND_FINGERS[2].reachMin, HAND_FINGERS[2].reachMax, clamp(pct / .4, 0, 1));
+    if (!hand.volumeTripPressed && pct >= .4) {
+      hand.volumeTripPressed = true;
+      musicVolume = 1;
+      tone(260, .04, 'sine', .05); // same cue the volume meter's own click uses
+    }
+    if (hand.stateT <= 0) {
+      hand.fingers[2].reach = HAND_FINGERS[2].reachMin;
+      hand.state = 'volumeTripUp';
+    }
+  } else if (hand.state === 'volumeTripUp') {
+    // Same live-dock tracking as 'retreating' above, for the same reason —
+    // the trip back from the volume meters can take up to
+    // ERIF_VOLUME_TRIP_MAX_TIME, plenty of time for the head to drift.
+    const dock = handDockPos(hand.id);
+    const d = steerHandToArrival(hand, dock, RETRACT_SPEED, RETRACT_TURN_RATE, dt, RETRACT_SLOW_RADIUS);
+    if (d < 16) {
       if (battle.erifWardPool.length) beginHandBout(hand, battle.erifWardPool.pop());
       else hand.state = 'gone';
     }
@@ -1671,7 +1918,6 @@ function handleErifPunch() {
       // Retreats, recharges for HAND_RECHARGE_TIME, then re-equips a new
       // random ward and rejoins on its own — see the 'retreating'/
       // 'recharging' branches in updateErifHand.
-      startHandTravel(target, { x: target.x, y: target.y }, handDockPos(target.id), RETRACT_SPEED, RETRACT_MIN_TIME, RETRACT_MAX_TIME);
       target.state = 'retreating'; target.ward = null;
     } else {
       // Nothing left in the pool to recharge it with — no point sending it
@@ -1703,12 +1949,32 @@ function handleErifPunch() {
 // instead of waiting on a cooldown.
 function updateErifHandHazards(dt) {
   updateRingHazards(dt);
+  // The verdict ward's spaced-burst variation (spawnVerdictSpacedBurst,
+  // bosses.js) fires its 2nd ring off this pending timer, normally ticked by
+  // updateVerdict's own loop — the Reckoning never runs that loop at all
+  // (fireFingerShot's verdict branch calls the spawn functions directly), so
+  // without this the 2nd ring just never showed up here.
+  if (battle.verdictSpacedBurstPending) {
+    battle.verdictSpacedBurstTimer -= dt;
+    if (battle.verdictSpacedBurstTimer <= 0) {
+      battle.verdictSpacedBurstPending = false;
+      const speed = VERDICT_RING_SPEED.hard;
+      spawnRing(true, rand(0, Math.PI * 2), 360, 0, speed, VERDICT_SPACED_BURST_GAP, 4, battle.verdictSpacedBurstOrigin);
+      tone(200, .05, 'sine', .03);
+    }
+  }
   updateSpearHazards(dt, true);
   updateShapeHazards(dt, true);
   updateSandGrains(dt); updateHourglassOrbs(dt);
   updateGaleFlags(dt); updateWindLines(dt);
-  updateWeavingBooks(dt); updateTrailSquares(dt);
+  // Same missing-update bug as Convergence/Final Convergence had for the
+  // archivist cue's echo books and the mask cue's drifting shards —
+  // spawning them without ever calling their own update function left them
+  // frozen in place, never actually tumbling/drifting in.
+  updateEchoBooks(dt); updateWeavingBooks(dt); updateTrailSquares(dt);
+  updateMaskShards(dt);
   updateErifBounceBalls(dt);
+  updateErifGemShards(dt);
   updateErifEyeBalls(dt);
   if (battle.galeGustPhase === 'telegraph') {
     // The Reckoning's gale-ward finger attack only ever fired a gust — no
@@ -1721,7 +1987,7 @@ function updateErifHandHazards(dt) {
   } else if (battle.galeGustPhase === 'active') {
     const b = battle.box, s = battle.soul;
     s.x = clamp(s.x + battle.windVX * dt, b.x + s.r, b.x + b.w - s.r);
-    s.y = clamp(s.y + battle.windVY * dt, b.y + s.r, b.y + b.h - s.r);
+    s.y = clamp(s.y + battle.windVY * dt, b.y + s.r, b.y + b.h - soulVisualBottomMargin());
     battle.galeGustTimer -= dt;
     if (battle.galeGustTimer <= 0) endGaleGust(true);
   }
@@ -1779,6 +2045,7 @@ function beginErifTrueFinal() {
   battle.erifSlamLockoutT = 0;
   battle.erifHandsLaughedAtFlurry = false;
   battle.erifBounceBalls = [];
+  battle.erifGemShards = [];
   battle.erifEyeBalls = [];
   battle.erifReckoningFadeT = 0;
   battle.punchFlashT = 0; battle.punchDir = 0;
@@ -1832,16 +2099,19 @@ function updateErifHandsFinale(dt) {
 
   updateErifHandHazards(dt);
 
-  // Hard 135s time limit — the last 5s fade the whole fight to black, and
-  // running the clock all the way out is a loss. Unlike hurt(), this always
-  // applies, God Mode included — the clock is a hard fight constraint, not
-  // ordinary damage, so debug invulnerability doesn't cover it.
+  // Hard 135s time limit — the last 5s shake the screen harder and harder
+  // (see battle.erifReckoningFadeT, read by main.js's draw()), and running
+  // the clock all the way out is a loss. Unlike hurt(), this always applies,
+  // God Mode included — the clock is a hard fight constraint, not ordinary
+  // damage, so debug invulnerability doesn't cover it. Deliberately no
+  // screen fade and no music fade here anymore — the player should be able
+  // to keep reading the arena and hearing the theme at full volume right up
+  // to the very end, with the shake alone carrying "it's about to end."
   const remaining = RECKONING_TIME_LIMIT - (battle.t - battle.phaseStartT);
   battle.erifReckoningFadeT = remaining > RECKONING_FADE_WINDOW ? 0 : clamp(1 - remaining / RECKONING_FADE_WINDOW, 0, 1);
-  // Fades the theme out alongside the black-out/shake instead of leaving it
-  // at full volume right up to the abrupt stopMusic() finishBattle(false)
-  // below fires — same treatment the whole-fight timer above uses.
-  if (remaining <= RECKONING_FADE_WINDOW) musicFadeMult = clamp(remaining / RECKONING_FADE_WINDOW, 0, 1);
+  // Same tension-visualizer growth as updateErif's own, just measured
+  // against the Reckoning's own timer instead of the whole fight's.
+  battle.erifReckoningVisualizerGrowth = clamp(((battle.t - battle.phaseStartT) / RECKONING_TIME_LIMIT - .5) / .25, 0, 1);
   if (remaining <= 0) {
     finishBattle(false);
     battle.clearText = 'IT ALL COMES APART.';
@@ -1913,8 +2183,10 @@ const REPRISE_TARGET_DURATION = (ERIF_FIGHT_TIME_LIMIT - 75) - ERIF_ENRAGE_DIALO
 function updateErif(dt) {
   if (battle.phase === PHASE_LAST_WAGER) { updateErifHandsFinale(dt); return; }
   const fightRemaining = ERIF_FIGHT_TIME_LIMIT - battle.t;
+  // No screen/music fade in the last 5s (see updateErifHandsFinale's own
+  // matching note) — battle.erifFightFadeT still drives an escalating shake
+  // instead (main.js's draw()).
   battle.erifFightFadeT = fightRemaining > ERIF_FIGHT_FADE_WINDOW ? 0 : clamp(1 - fightRemaining / ERIF_FIGHT_FADE_WINDOW, 0, 1);
-  if (fightRemaining <= ERIF_FIGHT_FADE_WINDOW) musicFadeMult = clamp(fightRemaining / ERIF_FIGHT_FADE_WINDOW, 0, 1);
   if (fightRemaining <= 0) {
     finishBattle(false);
     battle.clearText = 'THE HOUR RAN OUT.';

@@ -139,7 +139,12 @@ function drawBoot() {
 // live Reckoning head HUD (drawErifHeadHUD) can visibly pop them out one by
 // one as battle.erifHeadHp drops. Every other caller (header, hub, victory,
 // title) leaves this null and gets the full, untouched icon.
-function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null) {
+// beamPhase (null | 'telegraph' | 'active') only ever gets a real value from
+// drawErifHeadHUD's own call, mirroring battle.erifBeamPhase — every other
+// call site (title screen, victory screens, Final Convergence backdrop,
+// etc.) leaves it at the default null, so this only ever changes the mouth's
+// look during the Reckoning's own beam sequence, nowhere else.
+function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null, beamPhase = null) {
   const now = performance.now() / 1000;
   ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale); ctx.strokeStyle = ctx.fillStyle = '#fff'; ctx.globalAlpha = ghost ? .35 : 1;
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -152,6 +157,97 @@ function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null) {
   const hand = (hx, hy, rot = 0, scale = 1) => {
     ctx.save(); ctx.translate(hx, hy); ctx.rotate(rot); ctx.scale(scale, scale);
     ctx.strokeRect(-6, -8, 12, 16); line(6, -6, 16, -12, 2); line(6, -2, 18, -5, 2); line(6, 2, 18, 2, 2); line(6, 6, 16, 9, 2);
+    ctx.restore();
+  };
+  // A second "eye" language, for shaking up the roster — every boss so far
+  // reuses the same almond/lidded eye() above, which reads as repetitive
+  // across enough portraits. A faceted, crystalline gem instead of an
+  // organic eye: a cut-diamond outline with internal facet lines and a
+  // small bright core, reading as a watching jewel rather than an eyeball.
+  // Can sit alongside eye() on the same portrait or replace it outright.
+  const gemEye = (ex, ey, r, rot = 0) => {
+    ctx.save(); ctx.translate(ex, ey); ctx.rotate(rot);
+    ctx.beginPath();
+    ctx.moveTo(0, -r); ctx.lineTo(r * .7, -r * .3); ctx.lineTo(r * .7, r * .3); ctx.lineTo(0, r); ctx.lineTo(-r * .7, r * .3); ctx.lineTo(-r * .7, -r * .3);
+    ctx.closePath(); ctx.stroke();
+    ctx.lineWidth = .6;
+    ctx.beginPath(); ctx.moveTo(0, -r); ctx.lineTo(0, r); ctx.moveTo(-r * .7, -r * .3); ctx.lineTo(r * .7, r * .3); ctx.moveTo(r * .7, -r * .3); ctx.lineTo(-r * .7, r * .3); ctx.stroke();
+    // The bright core drifts a little within the facets, like a watching
+    // pupil, instead of sitting dead-center and static — desynced per eye via
+    // `ex` (each gemEye call uses a different x) so the three don't move in
+    // lockstep.
+    const coreX = Math.sin(now * .6 + ex) * r * .22, coreY = Math.cos(now * .5 + ex * 1.3) * r * .18;
+    ctx.beginPath(); ctx.arc(coreX, coreY, r * .28, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  };
+  // A faceless glowing slit instead of an eye at all — no lid, no pupil,
+  // just a thin ember line that pulses like a coal.
+  const emberSlitEye = (ex, ey, w, rot = 0) => {
+    ctx.save(); ctx.translate(ex, ey); ctx.rotate(rot);
+    ctx.strokeStyle = EMBER; ctx.lineWidth = 2; ctx.globalAlpha *= .55 + .35 * Math.sin(now * 2 + ex);
+    line(-w, 0, -2, 0, 2); line(2, 0, w, 0, 2);
+    ctx.restore();
+  };
+  // An eye sewn shut — the almond outline stays, but an X of stitches
+  // stands in for the pupil, instead of anything actually looking back.
+  const stitchedEye = (ex, ey, rx, ry, rot = 0) => {
+    ctx.save(); ctx.translate(ex, ey); ctx.rotate(rot);
+    ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 1;
+    line(-rx * .55, -ry * .55, rx * .55, ry * .55, 1); line(-rx * .55, ry * .55, rx * .55, -ry * .55, 1);
+    ctx.restore();
+  };
+  // A small drifting flame-mote instead of an eye — a teardrop of fire, no
+  // lid or pupil at all.
+  const flameMote = (ex, ey, s = 1) => {
+    ctx.save(); ctx.translate(ex, ey); ctx.scale(s, s); ctx.fillStyle = EMBER;
+    ctx.beginPath();
+    ctx.moveTo(0, -7); ctx.quadraticCurveTo(4, -1, 2, 4); ctx.quadraticCurveTo(0, 7, -2, 4); ctx.quadraticCurveTo(-4, -1, 0, -7);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = '#fff';
+  };
+  // A watching eye built like a sight/compass instead of an organic one —
+  // fits anything mechanical or pivot-fixed far better than a lidded almond.
+  const crosshairEye = (ex, ey, r, rot = 0) => {
+    ctx.save(); ctx.translate(ex, ey); ctx.rotate(rot);
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+    line(-r, 0, r, 0, 1); line(0, -r, 0, r, 1);
+    ctx.beginPath(); ctx.arc(0, 0, r * .25, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  };
+  // An eye already split by a crack instead of a smooth pupil — fits
+  // anything whose whole identity is fracturing/shattering.
+  const crackedEye = (ex, ey, rx, ry, rot = 0) => {
+    ctx.save(); ctx.translate(ex, ey); ctx.rotate(rot);
+    ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-rx * .6, -ry * .5); ctx.lineTo(-rx * .1, 0); ctx.lineTo(rx * .3, -ry * .3); ctx.lineTo(rx * .6, ry * .5); ctx.stroke();
+    ctx.restore();
+  };
+  // A little clock face instead of an eye — a bare circle with one sweeping
+  // hand and a center pin. `handAngle` is the hand's own live angle, not a
+  // static tilt, so a caller can spin it over time.
+  const clockEye = (ex, ey, r, handAngle = 0) => {
+    ctx.save(); ctx.translate(ex, ey);
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.save(); ctx.rotate(handAngle); line(0, 0, 0, -r * .8, 1); ctx.restore();
+    ctx.beginPath(); ctx.arc(0, 0, r * .15, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  };
+  // Two generic decorative symbols, not tied to any one boss — droppable
+  // onto any portrait as an extra detail, independent of eyes entirely.
+  // A small inscribed rune — a tiny radiating tick cluster.
+  const runeMark = (mx, my, r = 6, rot = 0) => {
+    ctx.save(); ctx.translate(mx, my); ctx.rotate(rot); ctx.lineWidth = 1;
+    for (let i = 0; i < 4; i++) { ctx.save(); ctx.rotate(i * Math.PI / 2 + Math.PI / 4); line(0, 0, 0, -r, 1); ctx.restore(); }
+    ctx.restore();
+  };
+  // A small stamped sigil/wax-seal medallion.
+  const sigilMark = (mx, my, r = 8) => {
+    ctx.save(); ctx.translate(mx, my); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+    line(-r * .5, -r * .4, r * .5, r * .4, 1); line(-r * .5, r * .4, r * .5, -r * .4, 1);
     ctx.restore();
   };
 
@@ -172,8 +268,17 @@ function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null) {
     ctx.globalAlpha = (ghost ? .35 : 1) * .7;
     for (const [cx2, cy2] of [[-20, -38], [20, -38], [-20, 38], [20, 38]]) { ctx.beginPath(); ctx.arc(cx2, cy2, 2, 0, Math.PI * 2); ctx.fill(); }
     line(-4, -4, -10, -12, 1); line(4, -4, 10, 4, 1);
+    // A small ember rune mark right at the neck — same radial tick-mark
+    // language Verdict/Oracle's own halos use, just enough to read as
+    // inscribed/mystic rather than purely mechanical.
+    ctx.save(); ctx.translate(-4, -4); ctx.strokeStyle = EMBER;
+    ctx.globalAlpha = (ghost ? .35 : 1) * (.5 + .3 * Math.sin(now * 2));
+    for (let i = 0; i < 4; i++) { ctx.save(); ctx.rotate(i * Math.PI / 2 + Math.PI / 4); line(0, 0, 0, -6, 1); ctx.restore(); }
+    ctx.restore();
     ctx.globalAlpha = ghost ? .35 : 1;
-    eye(0, -18, 7, 4); eye(0, 18, 7, 4, Math.PI);
+    // Little clock faces instead of gem-eyes — ticking hands fit "the sand
+    // does not wait for you" far better than a jeweled facet does.
+    clockEye(0, -18, 6, now * 1.2); clockEye(0, 18, 6, -now * 1.2 + Math.PI);
     // Falling embers, not sand — this is how long Erif lets itself last,
     // grain by grain.
     const sandT = (now * 1.3) % 1;
@@ -186,18 +291,33 @@ function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null) {
     ctx.fillStyle = '#fff';
     ctx.globalAlpha = ghost ? .35 : 1;
   } else if (type === 'executioner') {
+    // Alternating long/short blades instead of 8 identical rays — the
+    // uniform ring was what made it read as a plain cartoon sun rather than
+    // a bladed halo.
     ctx.save(); ctx.rotate(now * .08);
-    for (let i = 0; i < 8; i++) { ctx.save(); ctx.rotate(i * Math.PI / 4); line(0, -34, 0, -63, 2); line(0, -63, -5, -54, 1); line(0, -63, 5, -54, 1); ctx.restore(); }
+    for (let i = 0; i < 8; i++) {
+      ctx.save(); ctx.rotate(i * Math.PI / 4);
+      const tip = i % 2 === 0 ? -66 : -56;
+      line(0, -34, 0, tip, 2); line(0, tip, -5, tip + 9, 1); line(0, tip, 5, tip + 9, 1);
+      ctx.restore();
+    }
     ctx.restore();
-    ctx.beginPath(); ctx.moveTo(-24, 46); ctx.lineTo(-17, -20); ctx.lineTo(0, -39); ctx.lineTo(17, -20); ctx.lineTo(24, 46); ctx.closePath(); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-15, -20); ctx.lineTo(0, -35); ctx.lineTo(15, -20); ctx.lineTo(10, -5); ctx.lineTo(-10, -5); ctx.closePath(); ctx.stroke();
-    eye(0, -17, 7, 4);
+    // Robe peak raised into a real cowl point (-39 -> -58) so the hood
+    // actually frames a face instead of the eyes sitting on a bare collar.
+    ctx.beginPath(); ctx.moveTo(-24, 46); ctx.lineTo(-17, -20); ctx.lineTo(0, -58); ctx.lineTo(17, -20); ctx.lineTo(24, 46); ctx.closePath(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-15, -20); ctx.lineTo(0, -50); ctx.lineTo(15, -20); ctx.lineTo(10, -5); ctx.lineTo(-10, -5); ctx.closePath(); ctx.stroke();
+    // A faceless pair of glowing ember slits instead of an eye() — reads as
+    // a hooded, faceless executioner rather than anyone looking back.
+    emberSlitEye(0, -24, 11);
     for (const side of [-1, 1]) {
       ctx.save(); ctx.translate(side * 29, 13); ctx.rotate(side * -.12);
       line(0, -32, 0, 30, 4); line(0, -32, side * 11, -19, 2); line(0, 30, side * -7, 20, 2);
       ctx.restore();
     }
-    for (let y = 3; y < 40; y += 10) line(-9, y, 14, y - 3, 1);
+    // Horizontal plate seams instead of diagonal cloth-hatch — armor
+    // banding, not fabric, and one less place reusing the same texture
+    // language every robed boss already shares.
+    for (let y = -2; y < 40; y += 9) line(-16 + y * .1, y, 16 - y * .1, y, 1);
   } else if (type === 'witness') {
     ctx.save(); ctx.rotate(now * .22);
     for (let i = 0; i < 3; i++) {
@@ -219,7 +339,9 @@ function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null) {
     ctx.globalAlpha = (ghost ? .35 : 1) * .5;
     for (let y = -8; y <= 32; y += 11) { line(-22, y, -3, y - 3, 1); line(3, y - 3, 22, y, 1); }
     ctx.globalAlpha = ghost ? .35 : 1;
-    eye(-10, -12, 8, 5, -.25); eye(10, -12, 8, 5, .25);
+    // Eyes sewn shut instead of an eye() pair — fits "find the one that
+    // actually saw it" far better than an eye that's actually watching.
+    stitchedEye(-10, -12, 8, 5, -.25); stitchedEye(10, -12, 8, 5, .25);
     const handR = 60;
     for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3 + now * .1; hand(Math.cos(a) * handR, Math.sin(a) * handR, a + Math.PI, i % 2 ? .8 : .66); }
     for (const [sx, sy, kind] of [[-20, 20, 0], [20, 20, 1], [0, -28, 2]]) {
@@ -230,42 +352,105 @@ function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null) {
       ctx.restore();
     }
   } else if (type === 'oracle') {
-    // A rotating halo of lane-ticks (echoing the quiz's own 4 answer lanes)
-    // and a pulsing tablet, on top of the original robe/orbiting-eyes core —
-    // ties the portrait directly to the mechanic instead of just being a
-    // static robe shape with eyes drifting around it.
+    // Orbiting NUMBERED orbs, not plain tick marks — a direct callback to
+    // the quiz's own numeric answer lanes (generateOracleQuestion/
+    // newQuestion, hazards.js), same "portrait wears its own mechanic" move
+    // Verdict's rings and Witness's badges already use.
     ctx.save(); ctx.rotate(now * .18);
     for (let i = 0; i < 4; i++) {
-      ctx.save(); ctx.rotate(i * Math.PI / 2);
-      ctx.globalAlpha = ghost ? .35 : .55; line(0, -72, 0, -84, 2);
+      const a = i * Math.PI / 2;
+      ctx.save(); ctx.rotate(a); ctx.translate(0, -78); ctx.rotate(-(now * .18 + a));
+      ctx.globalAlpha = ghost ? .35 : .8; ctx.lineWidth = 1.5; ctx.strokeStyle = ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.stroke();
+      text(`${i + 1}`, 0, 1, 11, 'center', ghost ? .35 : .85);
       ctx.restore();
     }
     ctx.restore();
-    ctx.beginPath(); ctx.moveTo(-30, 48); ctx.lineTo(-22, -18); ctx.lineTo(0, -38); ctx.lineTo(22, -18); ctx.lineTo(30, 48); ctx.closePath(); ctx.stroke();
-    // Robe hem stitching — same cross-hatch language as the Archivist's
-    // pages, plain fabric texture rather than a flat, empty triangle.
+    // A straight A-line taper (shoulders to hem), not a pointed-top rounded
+    // bulge — the previous curve-heavy shape read as a literal eggplant
+    // (narrow stem-like top, round bulging middle, flat bottom). A rounded
+    // shoulder/collar line instead of a point, straight sides down to a
+    // slightly flared hem, same "figure, not a blob" goal without the
+    // vegetable silhouette.
+    ctx.beginPath();
+    ctx.moveTo(-20, -28); ctx.lineTo(-26, 48); ctx.lineTo(26, 48); ctx.lineTo(20, -28);
+    ctx.quadraticCurveTo(0, -42, -20, -28);
+    ctx.closePath(); ctx.stroke();
+    // Robe hem stitching — same cross-hatch fabric texture Witness's own
+    // robe uses, plain fabric rather than a flat, empty triangle.
     ctx.globalAlpha = (ghost ? .35 : 1) * .5;
     for (let y = 0; y <= 40; y += 10) { line(-25 + y * .12, y, -6 + y * .12, y - 4, 1); line(6 - y * .12, y - 4, 25 - y * .12, y, 1); }
     ctx.globalAlpha = ghost ? .35 : 1;
-    ctx.beginPath(); ctx.arc(0, -24, 12, 0, Math.PI * 2); ctx.stroke();
-    line(-11, -24, 11, -24, 3);
-    for (let i = 0; i < 4; i++) { const a = now * .35 + i * Math.PI / 2; ctx.save(); ctx.translate(Math.cos(a) * 53, Math.sin(a) * 39); ctx.rotate(a); eye(0, 0, 8, 5); ctx.restore(); }
-    ctx.save(); ctx.translate(0, 12); ctx.rotate(Math.sin(now * 2) * .04);
-    ctx.globalAlpha = (ghost ? .35 : 1) * (.75 + .25 * Math.sin(now * 3));
-    ctx.strokeRect(-25, -18, 50, 36); line(0, -18, 0, 18, 2);
+    // A chest amulet/collar, pulled down off the shoulder line (was -24,
+    // crowding right up against the peak above it and reading as clipping)
+    // — sits clearly on the chest now instead of jammed into the neck.
+    // Nudged up a touch (-12 -> -17) so it isn't touching the scrying orb
+    // just below it.
+    ctx.beginPath(); ctx.arc(0, -17, 11, 0, Math.PI * 2); ctx.stroke();
+    line(-10, -17, 10, -17, 3);
+    // A third eye built as a farsight/compass-sight instead of an almond —
+    // "the real eye among watchers," glowing brighter/blinking slower than
+    // the flame-motes drifting below it. Raised (-46 -> -54) for real
+    // clearance above the now-taller shoulder peak instead of crowding it.
+    ctx.save(); ctx.globalAlpha = (ghost ? .35 : 1) * (.7 + .3 * Math.sin(now * .8));
+    crosshairEye(0, -54, 6);
     ctx.restore();
+    // Drifting flame-motes instead of orbiting eyes — small fires circling
+    // the seer rather than more almond eyes. Tighter vertical range and
+    // shifted down a touch (39 -> 30, +6) so the ring clears both the
+    // shoulder peak and the third eye above it at every point in its
+    // rotation, instead of drifting through them.
+    for (let i = 0; i < 4; i++) { const a = now * .35 + i * Math.PI / 2; flameMote(Math.cos(a) * 53, 6 + Math.sin(a) * 30, .9); }
+    // A glowing scrying orb instead of a flat rectangle tablet — an actual
+    // mystic instrument rather than a blank slate.
+    ctx.save(); ctx.translate(0, 14);
+    const orbPulse = .5 + .5 * Math.sin(now * 3);
+    ctx.globalAlpha = (ghost ? .35 : 1) * .3; ctx.fillStyle = EMBER;
+    ctx.beginPath(); ctx.arc(0, 0, 20 + orbPulse * 3, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = ghost ? .35 : 1; ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.globalAlpha = (ghost ? .35 : 1) * .6;
+    ctx.beginPath(); ctx.arc(-4, -5, 6, Math.PI * 1.1, Math.PI * 1.7); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = '#fff';
   } else if (type === 'archivist') {
     ctx.beginPath();
     ctx.moveTo(0, -46); ctx.lineTo(-46, -30); ctx.lineTo(-46, 38); ctx.lineTo(0, 50); ctx.lineTo(46, 38); ctx.lineTo(46, -30);
     ctx.closePath(); ctx.stroke();
     line(0, -46, 0, 50, 2);
     for (let y = -18; y <= 30; y += 12) { line(-36, y, -8, y - 4, 1); line(8, y - 4, 36, y, 1); }
-    eye(0, -6, 11, 7);
-    for (let i = 0; i < 5; i++) { const a = now * .25 + i * Math.PI * 2 / 5; eye(Math.cos(a) * 58, Math.sin(a) * 40, 7, 4, a); }
+    // A watching, tracking eye built like a farsight instead of an almond —
+    // "what the ash remembers" is being cross-referenced, not just observed.
+    crosshairEye(0, -6, 9);
+    // A thin illuminated-manuscript sunburst around the centered eye,
+    // instead of it floating bare on the page.
+    ctx.save(); ctx.translate(0, -6); ctx.globalAlpha = (ghost ? .35 : 1) * .5; ctx.lineWidth = 1;
+    for (let i = 0; i < 8; i++) { ctx.save(); ctx.rotate(i * Math.PI / 4); line(0, -13, 0, -19, 1); ctx.restore(); }
+    ctx.restore();
+    // A wax seal medallion below the eye — an ancient, sealed tome.
+    ctx.save(); ctx.globalAlpha = ghost ? .35 : .8;
+    sigilMark(0, 16, 8);
+    ctx.restore();
+    // Orbiting memory-match glyphs — the exact same 5 shapes the Archivist's
+    // own memory-match minigame uses (ECHO_SYMBOLS, bosses.js), replacing
+    // the old plain orbiting eyes with a direct callback to its own
+    // mechanic, same move as Verdict's rings/Oracle's numbered orbs.
+    for (let i = 0; i < 5; i++) {
+      const a = now * .25 + i * Math.PI * 2 / 5, ox = Math.cos(a) * 90, oy = Math.sin(a) * 68;
+      ctx.save(); ctx.translate(ox, oy); ctx.rotate(a * 1.3 + now * .8); ctx.lineWidth = 1.3;
+      const name = ECHO_SYMBOLS[i % ECHO_SYMBOLS.length];
+      if (name === 'circle') { ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.stroke(); }
+      else if (name === 'square') ctx.strokeRect(-5, -5, 10, 10);
+      else if (name === 'triangle') { ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(-6, 5); ctx.lineTo(6, 5); ctx.closePath(); ctx.stroke(); }
+      else if (name === 'diamond') { ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(7, 0); ctx.lineTo(0, 7); ctx.lineTo(-7, 0); ctx.closePath(); ctx.stroke(); }
+      else { line(-5, -5, 5, 5, 1.3); line(-5, 5, 5, -5, 1.3); }
+      ctx.restore();
+    }
     // Orbiting tumbling pages — matches the book hazard from its own fight,
     // one ring further out than the eyes so they read as a distinct layer.
     for (let i = 0; i < 3; i++) {
-      const a = -now * .3 + i * Math.PI * 2 / 3, ox = Math.cos(a) * 82, oy = Math.sin(a) * 58;
+      const a = -now * .3 + i * Math.PI * 2 / 3, ox = Math.cos(a) * 123, oy = Math.sin(a) * 90;
       ctx.save(); ctx.translate(ox, oy); ctx.rotate(a * 1.4 + now * 1.5); ctx.lineWidth = 1;
       ctx.strokeRect(-6, -8, 12, 16); line(0, -8, 0, 8, .5);
       ctx.restore();
@@ -280,8 +465,13 @@ function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null) {
     // duality/mirror theme made visible on the portrait, not just in the
     // spear coloring during its own fight.
     ctx.save(); ctx.globalAlpha = (ghost ? .35 : 1) * .25; ctx.translate(Math.sin(now * .4) * 12, 0); ctx.scale(-1, 1);
-    ctx.beginPath(); ctx.moveTo(0, -50 + bob); ctx.quadraticCurveTo(-40, -40 + bob, -40, bob); ctx.quadraticCurveTo(-40, 40 + bob, 0, 50 + bob); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, -50 + bob); ctx.quadraticCurveTo(40, -40 + bob, 40, bob); ctx.quadraticCurveTo(40, 40 + bob, 0, 50 + bob); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -56 + bob); ctx.quadraticCurveTo(-44, -40 + bob, -40, bob); ctx.quadraticCurveTo(-40, 44 + bob, 0, 58 + bob); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -56 + bob); ctx.quadraticCurveTo(44, -40 + bob, 40, bob); ctx.quadraticCurveTo(40, 44 + bob, 0, 58 + bob); ctx.stroke();
+    // A fuller phantom double — the ghost used to just trace the outer
+    // silhouette; mirroring the eyes too makes it read as an actual second
+    // face phasing through, not just an outline.
+    ctx.beginPath(); ctx.ellipse(-18, -10 + bob, 8, 5, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(18, -10 + bob, 8, 4, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
 
     // Two thin counter-rotating rings — solid and dashed — reinforcing the
@@ -295,56 +485,93 @@ function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null) {
       ctx.restore();
     }
 
-    // A waist pinch partway down (narrower at y=-6 than the flare below it)
-    // instead of one continuous bulge — the single-curve-per-side version
-    // read as a smooth blob with no silhouette landmarks.
+    // A wide flat brow tapering to a single angular chin point, not a
+    // rounded waist-pinched vase — the previous shape read as a smooth
+    // gourd/blob rather than an actual mask silhouette. Widest across the
+    // brow/cheek band (where the eyes sit), narrowing to one sharp point at
+    // the chin — the classic ritual-mask outline.
     ctx.beginPath();
-    ctx.moveTo(0, -50 + bob);
-    ctx.quadraticCurveTo(-33, -36 + bob, -30, -6 + bob);
-    ctx.quadraticCurveTo(-27, 18 + bob, -38, 40 + bob);
-    ctx.quadraticCurveTo(-20, 48 + bob, 0, 50 + bob);
-    ctx.quadraticCurveTo(20, 48 + bob, 38, 40 + bob);
-    ctx.quadraticCurveTo(27, 18 + bob, 30, -6 + bob);
-    ctx.quadraticCurveTo(33, -36 + bob, 0, -50 + bob);
+    ctx.moveTo(-40, -30 + bob);
+    ctx.quadraticCurveTo(-44, -46 + bob, -20, -52 + bob);
+    ctx.quadraticCurveTo(0, -56 + bob, 20, -52 + bob);
+    ctx.quadraticCurveTo(44, -46 + bob, 40, -30 + bob);
+    ctx.quadraticCurveTo(46, -4 + bob, 30, 20 + bob);
+    ctx.quadraticCurveTo(22, 44 + bob, 0, 58 + bob);
+    ctx.quadraticCurveTo(-22, 44 + bob, -30, 20 + bob);
+    ctx.quadraticCurveTo(-46, -4 + bob, -40, -30 + bob);
     ctx.closePath(); ctx.stroke();
-    line(0, -50 + bob, 0, 50 + bob, 2);
-    eye(-18, -8 + bob, 8, 5, Math.sin(now * .8 + 2) * .25);
+    line(0, -56 + bob, 0, 58 + bob, 2);
+    // Cracked eyes instead of plain eye() — the face is already fractured
+    // (see the crack lines below), so the eyes should already read as split
+    // too, not smoothly intact.
+    crackedEye(-18, -10 + bob, 8, 5, Math.sin(now * .8 + 2) * .25);
     ctx.beginPath(); ctx.moveTo(-28, 20 + bob); ctx.quadraticCurveTo(-18, 28 + bob, -8, 20 + bob); ctx.stroke();
-    eye(18, -8 + bob, 8, 4, Math.sin(now * .6) * .3);
+    crackedEye(18, -10 + bob, 8, 4, Math.sin(now * .6) * .3);
     ctx.beginPath(); ctx.moveTo(8, 26 + bob); ctx.quadraticCurveTo(18, 16 + bob, 28, 26 + bob); ctx.stroke();
-    for (let i = 0; i < 3; i++) { const yy = -30 + bob + i * 22; line(-3 + (i % 2 ? -2 : 2), yy, 3 + (i % 2 ? 2 : -2), yy + 10, 1); }
+    for (let i = 0; i < 3; i++) { const yy = -32 + bob + i * 24; line(-3 + (i % 2 ? -2 : 2), yy, 3 + (i % 2 ? 2 : -2), yy + 10, 1); }
+    // Ember-tinted fracture cracks across the face — its whole fight hazard
+    // is a shattering shard, so the mask itself should already look
+    // cracked, not just throw cracked pieces.
+    const crackPulse = .5 + .5 * Math.sin(now * 1.4);
+    ctx.save(); ctx.strokeStyle = EMBER; ctx.lineWidth = 1; ctx.globalAlpha = (ghost ? .35 : 1) * (.4 + .3 * crackPulse);
+    ctx.beginPath(); ctx.moveTo(-6, -40 + bob); ctx.lineTo(2, -20 + bob); ctx.lineTo(-10, -4 + bob); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(14, -30 + bob); ctx.lineTo(24, -10 + bob); ctx.lineTo(16, 8 + bob); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-20, 10 + bob); ctx.lineTo(-10, 30 + bob); ctx.lineTo(-18, 46 + bob); ctx.stroke();
+    ctx.restore();
+    ctx.strokeStyle = '#fff';
+    // Orbiting shard debris — the exact shape its own projectile uses (see
+    // battle.spears' isShard rendering further down), tumbling around the
+    // portrait, same "wears its own hazard" move Archivist's pages/Verdict's
+    // rings/Oracle's numbered orbs all use.
+    for (let i = 0; i < 3; i++) {
+      const a = now * .22 + i * Math.PI * 2 / 3, ox = Math.cos(a) * 84, oy = Math.sin(a) * 60 + bob;
+      ctx.save(); ctx.translate(ox, oy); ctx.rotate(a * 1.6 + now * 2);
+      ctx.globalAlpha = ghost ? .35 : .8; ctx.lineWidth = 1.3;
+      ctx.beginPath(); ctx.moveTo(-7, 0); ctx.lineTo(-1, -4); ctx.lineTo(6, 0); ctx.lineTo(-1, 4); ctx.closePath(); ctx.stroke();
+      ctx.restore();
+    }
     ctx.restore();
   } else if (type === 'verdict') {
     // A tribunal silhouette wearing the hazard itself as a halo — each ring
     // has a real open arc that slowly rotates, echoing the shrinking
     // ring/gap dodge directly instead of abstracting it into a plain dashed
     // circle (which read as a generic target reticle, not a judgment).
-    // A waist pinch around y=-14 before flaring back out — the previous
-    // single curve from shoulder to hem had no silhouette landmark partway
-    // down, which is what read as a smooth blob.
-    ctx.beginPath();
-    ctx.moveTo(0, -56);
-    ctx.quadraticCurveTo(-34, -44, -32, -14);
-    ctx.quadraticCurveTo(-30, 10, -42, 30);
-    ctx.quadraticCurveTo(-34, 50, -22, 58);
-    ctx.lineTo(22, 58);
-    ctx.quadraticCurveTo(34, 50, 42, 30);
-    ctx.quadraticCurveTo(30, 10, 32, -14);
-    ctx.quadraticCurveTo(34, -44, 0, -56);
-    ctx.closePath(); ctx.lineWidth = 2; ctx.stroke();
-    line(0, -56, 0, 58, 1);
+    // A round body (an oval, not a pointed-hood/flat-hem shield outline) —
+    // the previous straight-bottomed hexagon read as a crest/shield rather
+    // than a being, and clashed with its own perfectly circular ring halo.
+    ctx.beginPath(); ctx.ellipse(0, 2, 46, 54, 0, 0, Math.PI * 2); ctx.stroke();
+    line(0, -52, 0, 56, 1);
     ctx.globalAlpha = (ghost ? .35 : 1) * .45;
     for (let y = -2; y <= 44; y += 11) { line(-34 + y * .05, y, -14, y - 4, 1); line(14, y - 4, 34 - y * .05, y, 1); }
     ctx.globalAlpha = ghost ? .35 : 1;
 
-    for (let ring = 0; ring < 2; ring++) {
-      const rr = 68 + ring * 20, spin = (ring ? -1 : 1) * now * .18, gap = .55;
-      ctx.save(); ctx.lineWidth = ring ? 1.5 : 2; ctx.globalAlpha = (ghost ? .35 : 1) * (ring ? .55 : .85);
-      ctx.beginPath(); ctx.arc(0, 0, rr, spin + gap, spin + Math.PI * 2 - gap); ctx.stroke();
+    // Grown from 2 rings to 4 — not just more copies of the same ring, each
+    // one is visually distinct (gap width, spin direction/speed, radius),
+    // and the outer two are tilted crossing ellipses rather than flat
+    // circles (same trick Erif's own orbit rings use), so this reads as
+    // "wheels within wheels" — a genuinely grander judgment halo instead of
+    // a bigger number of identical circles.
+    const VERDICT_RINGS = [
+      { rr: 68, gap: .55, dir: 1, speed: .18, tilt: 0, squash: 1, alpha: .85, width: 2 },
+      { rr: 88, gap: .55, dir: -1, speed: .18, tilt: 0, squash: 1, alpha: .55, width: 1.5 },
+      { rr: 106, gap: .32, dir: 1, speed: .12, tilt: Math.PI / 7, squash: .62, alpha: .5, width: 1.4 },
+      { rr: 106, gap: .32, dir: -1, speed: .12, tilt: -Math.PI / 7, squash: .62, alpha: .5, width: 1.4 },
+    ];
+    for (const r of VERDICT_RINGS) {
+      const spin = r.dir * now * r.speed;
+      ctx.save(); ctx.rotate(r.tilt); ctx.lineWidth = r.width; ctx.globalAlpha = (ghost ? .35 : 1) * r.alpha;
+      ctx.beginPath(); ctx.ellipse(0, 0, r.rr, r.rr * r.squash, 0, spin + r.gap, spin + Math.PI * 2 - r.gap); ctx.stroke();
       ctx.restore();
     }
 
-    eye(0, -14, 14, 9);
+    // Three faceted gem-eyes instead of the same almond eye() every other
+    // boss already uses — a crystalline "eye of judgment" fits a tribunal
+    // wearing a ring-halo of gaps far better than an organic eye would, and
+    // shakes up the roster's repeated eye language. A smaller central gem
+    // flanked by two temple gems, echoing the same many-eyes composition
+    // Oracle/Archivist/Erif all use, just in a different material.
+    gemEye(0, -28, 10);
+    gemEye(-17, -20, 7, -.3); gemEye(17, -20, 7, .3);
     // A struck gavel-mark stands in for a mouth.
     line(-14, 22, 14, 22, 2.5); line(0, 8, 0, 22, 2.5);
     for (let i = 0; i < 4; i++) {
@@ -353,18 +580,38 @@ function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null) {
       ctx.restore();
     }
   } else if (type === 'gale') {
-    // A weathervane — a fixed post and compass cross with a single arrow
-    // slowly and endlessly pivoting around it, hunting for a wind that
-    // never quite settles. The eye stays fixed at the pivot, watching,
-    // while the arrow (and the wind it trails) turns around it.
+    // A robed wind-wraith, not a bare weathervane instrument — the compass
+    // cross and rotating arrow below (a genuinely good, mechanically-
+    // grounded idea, kept exactly as before) now belong to a figure wearing
+    // them at chest height rather than being its entire physical form. The
+    // eye stays fixed at the pivot, watching, while the arrow (and the wind
+    // it trails) turns around it.
     const spin = now * .3;
 
-    // The post: a plain rod down to a small flared base.
+    // Hood-to-shoulder taper on each side, left open rather than closed into
+    // a solid hem — the lower robe dissolves into streaming wind-ribbons
+    // instead of ever holding a fixed shape, in place of the old rigid post
+    // and flared base.
     ctx.lineWidth = 2;
-    line(0, -46, 0, 60, 2.5);
-    ctx.beginPath(); ctx.moveTo(-14, 60); ctx.lineTo(14, 60); ctx.lineTo(9, 70); ctx.lineTo(-9, 70); ctx.closePath(); ctx.stroke();
-    // A small finial ball at the very top of the post.
-    ctx.beginPath(); ctx.arc(0, -50, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0, -56); ctx.quadraticCurveTo(-26, -44, -24, -18); ctx.quadraticCurveTo(-22, 0, -30, 14); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -56); ctx.quadraticCurveTo(26, -44, 24, -18); ctx.quadraticCurveTo(22, 0, 30, 14); ctx.stroke();
+    ctx.lineWidth = 1.3;
+    for (let i = 0; i < 4; i++) {
+      const bx = -30 + i * 20, sway = Math.sin(now * .8 + i * 1.3) * 6;
+      ctx.beginPath();
+      ctx.moveTo(bx * .77, 14);
+      ctx.quadraticCurveTo(bx + sway, 40, bx * .5 + sway * 1.4, 64);
+      ctx.stroke();
+    }
+    // A small curling wind-wisp up in the hood instead of a second eye — the
+    // filled ember flame-mote read as a blood drop here, so this is an
+    // unfilled curl of moving air instead, which also just fits Gale far
+    // better than fire does. Stays subtly on the move while the fixed
+    // pivot-eye below stays perfectly still.
+    ctx.save(); ctx.translate(Math.sin(now * .5) * 4, -40); ctx.rotate(now * .6);
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-4, 2); ctx.quadraticCurveTo(0, -5, 4, -1); ctx.quadraticCurveTo(6, 3, 2, 4); ctx.stroke();
+    ctx.restore();
 
     // Compass cross — four short fixed arms at N/E/S/W, each tipped with a
     // small ball, mounted a little below the arrow's own pivot.
@@ -377,24 +624,17 @@ function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null) {
     }
     ctx.restore();
 
-    // The eye sits fixed at the arrow's pivot point — the one thing that
-    // doesn't turn while everything else does.
-    eye(0, -12, 10.5, 6.8, 0);
+    // A compass-sight eye, fixed at the arrow's own pivot point — the one
+    // thing that doesn't turn while everything else does, built like the
+    // instrument it watches over instead of an organic eye.
+    crosshairEye(0, -12, 9);
 
     // The arrow itself, slowly and endlessly rotating around that same
-    // pivot, streaming wind lines off its tail end as it turns.
+    // pivot, hunting for a wind that never quite settles.
     ctx.save(); ctx.translate(0, -12); ctx.rotate(spin);
     line(-40, 0, 28, 0, 2.5);
     ctx.beginPath(); ctx.moveTo(44, 0); ctx.lineTo(26, -9); ctx.lineTo(26, 9); ctx.closePath(); ctx.fill();
     ctx.beginPath(); ctx.moveTo(-40, 0); ctx.lineTo(-26, -11); ctx.lineTo(-26, 11); ctx.closePath(); ctx.stroke();
-    ctx.lineWidth = 1.3;
-    for (let i = 0; i < 3; i++) {
-      const yy = -10 + i * 10;
-      ctx.beginPath();
-      ctx.moveTo(-42, yy * .5);
-      ctx.quadraticCurveTo(-58, yy * .5 - 4, -72, yy * .5 + 3);
-      ctx.stroke();
-    }
     ctx.restore();
   } else if (type === 'erif') {
     // A menacing flame demon, not a mopey mask — backswept horns instead of
@@ -405,6 +645,46 @@ function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null) {
     // than tiled everywhere — so even his chaos keeps a chessboard-like
     // order, fitting a demon lord of wits rather than a raw eldritch mass.
     const rot = now * .16, rot2 = -now * .11, ga = ghost ? .35 : 1;
+
+    // Great feathered wings, biblical in scale — drawn first (and thus
+    // furthest back — the body/aura/mouth all layer on top of the roots,
+    // reading as wings unfurling from behind him rather than pasted in
+    // front). A small ember eye glows at each feather tip, tying the "wings
+    // covered in eyes" seraphim/ophanim imagery directly into his own
+    // many-eyes motif rather than being a bare bolt-on.
+    ctx.save(); ctx.lineWidth = 1.8;
+    const WING_TIP_X = [40, 95, 145, 185], WING_TIP_Y = [-50, -85, -100, -95];
+    for (const side of [-1, 1]) {
+      ctx.save(); ctx.globalAlpha = ga * .85;
+      const rootX = side * 16, rootY = 8;
+      ctx.beginPath();
+      ctx.moveTo(rootX, rootY);
+      for (let i = 0; i < WING_TIP_X.length; i++) {
+        const tx = side * WING_TIP_X[i], ty = WING_TIP_Y[i];
+        ctx.quadraticCurveTo(side * WING_TIP_X[i] * .55, (rootY + ty) * .4, tx, ty);
+      }
+      // Scalloped trailing edge back to the root — reads as a row of
+      // individual feathers rather than one solid membrane.
+      for (let i = WING_TIP_X.length - 1; i >= 0; i--) {
+        ctx.quadraticCurveTo(side * WING_TIP_X[i] * .8, WING_TIP_Y[i] + 10, side * WING_TIP_X[i] * .62, WING_TIP_Y[i] + 26);
+      }
+      ctx.closePath(); ctx.stroke();
+      // Feather separator lines, root to (just short of) each tip.
+      for (let i = 0; i < WING_TIP_X.length; i++) {
+        ctx.save(); ctx.globalAlpha = ga * .5;
+        line(rootX, rootY, side * WING_TIP_X[i], WING_TIP_Y[i] + 14, 1);
+        ctx.restore();
+      }
+      ctx.fillStyle = EMBER;
+      for (let i = 0; i < WING_TIP_X.length; i++) {
+        ctx.save(); ctx.globalAlpha = ga * (.55 + .3 * Math.sin(now * 2 + i + side));
+        ctx.beginPath(); ctx.arc(side * WING_TIP_X[i] * .85, WING_TIP_Y[i] + 8, 2.4, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+    ctx.strokeStyle = '#fff'; ctx.fillStyle = '#fff';
+    ctx.restore();
 
     // A slow ember pulse behind everything else, hotter and wider than a
     // lieutenant's — he IS the source flame, so the heat radiating off him
@@ -531,13 +811,34 @@ function drawBossIcon(type, x, y, ghost = false, scale = 1, eyesLeft = null) {
     // rows together) vertically around the fixed top lip line (y=18) rather
     // than recomputing every point, so it reads as one breathing motion
     // instead of the teeth resizing independently of the mouth outline.
+    // Held fully open (no breathing) instead while the mouth laser is
+    // telegraphing/active (beamPhase, only ever set by drawErifHeadHUD's own
+    // call during the Reckoning) — reads as locked/straining rather than
+    // idly panting right as it's about to (or is actively) firing.
     ctx.save();
-    ctx.translate(0, 18); ctx.scale(1, lerp(.4, 1, (Math.sin(now * .4) + 1) / 2)); ctx.translate(0, -18);
+    ctx.translate(0, 18); ctx.scale(1, beamPhase ? 1 : lerp(.4, 1, (Math.sin(now * .4) + 1) / 2)); ctx.translate(0, -18);
     ctx.beginPath();
     ctx.moveTo(-27, 18);
     ctx.quadraticCurveTo(0, 70, 27, 18);
     ctx.quadraticCurveTo(0, 30, -27, 18);
-    ctx.closePath(); ctx.fillStyle = '#000'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.8; ctx.stroke();
+    ctx.closePath();
+    if (beamPhase === 'telegraph') {
+      // Same pulse formula as drawErifBeam's own telegraph rendering, so the
+      // mouth and the warning wedge visibly pulse in lockstep.
+      const pulse = .4 + .4 * Math.abs(Math.sin(performance.now() / 90));
+      ctx.fillStyle = EMBER; ctx.globalAlpha = ga * pulse; ctx.fill(); ctx.globalAlpha = ga;
+    } else if (beamPhase === 'active') {
+      // Same soft-glow-behind-bright-core language drawErifBeam's own active
+      // rendering uses — reads as the literal source of the beam drawn
+      // radiating outward from roughly this same point.
+      ctx.fillStyle = EMBER; ctx.globalAlpha = ga * .6; ctx.fill(); ctx.globalAlpha = ga;
+      ctx.fillStyle = '#fff'; ctx.globalAlpha = ga * .85;
+      ctx.beginPath(); ctx.ellipse(0, 26, 10, 7, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = ga; ctx.fillStyle = '#000';
+    } else {
+      ctx.fillStyle = '#000'; ctx.fill();
+    }
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.8; ctx.stroke();
     // Upper fangs hang from the inner (roof) curve.
     ctx.beginPath();
     for (let x = -21; x <= 21; x += 10.5) { ctx.moveTo(x - 4, 23); ctx.lineTo(x, 33); ctx.lineTo(x + 4, 23); }
@@ -596,12 +897,48 @@ function lerpColor(hex1, hex2, t) {
   return `rgb(${r},${g},${b})`;
 }
 
+// How far drawFlame's own effective center shifts down as it shrinks toward
+// the fixed base point it's anchored to (see drawFlame's own comment) — a
+// shared helper so anything else anchored near the flame (drawSoulGlow's own
+// call site) can follow the exact same downward drift instead of staying
+// pinned to where the flame's center sits at full HP.
+function flameShrinkDrop(baseScale, hpFrac) {
+  const scale = baseScale * lerp(.6, 1, clamp(hpFrac, 0, 1));
+  return 9 * (baseScale - scale);
+}
+// Feeds drawFlame's own wobble a "warped" time instead of real wall-clock
+// time — a persistent accumulator that advances by real elapsed time times
+// a per-cycle random speed (0.75x-1.25x), re-rolled every time the fast
+// wobble term (frequency 9) completes a full cycle. Accumulating instead of
+// resetting the phase each cycle keeps both sine terms perfectly continuous
+// — only the RATE changes at each cycle boundary, never a visible jump.
+let flameWobbleLastT = null, flameWobbleAccum = 0, flameWobbleMult = 1, flameWobbleNextBoundary = (Math.PI * 2) / 9;
+function flameWobbleWarpedT(t) {
+  if (flameWobbleLastT === null) flameWobbleLastT = t;
+  flameWobbleAccum += Math.max(0, t - flameWobbleLastT) * flameWobbleMult;
+  flameWobbleLastT = t;
+  if (flameWobbleAccum >= flameWobbleNextBoundary) {
+    flameWobbleMult = rand(.75, 1.25);
+    flameWobbleNextBoundary += (Math.PI * 2) / 9;
+  }
+  return flameWobbleAccum;
+}
 // The player's avatar in both exploration and battle — a small guttering
 // flame ("a fragile spark of wit") rather than the source game's heart.
 function drawFlame(x, y, scale = 1, hpFrac = 1, invuln = false) {
-  ctx.save(); ctx.translate(x, y);
+  // Shrinks up to 40% as HP drops toward 1 (the core highlight shrinks
+  // right along with it, since it's drawn using this same already-shrunk
+  // scale) — the flame itself should gutter down, not just fade color, as
+  // it burns low. Anchored so the BASE stays put and only the tip pulls
+  // down/in as it shrinks, instead of shrinking symmetrically around (x,y)
+  // — that used to lift the whole flame's base up off the wick, floating.
+  const baseScale = scale;
+  const baseDrop = flameShrinkDrop(baseScale, hpFrac);
+  scale = baseScale * lerp(.6, 1, clamp(hpFrac, 0, 1));
+  ctx.save(); ctx.translate(x, y + baseDrop);
   const t = performance.now() / 1000;
-  const wobble = (Math.sin(t * 9) * 1.4 + Math.sin(t * 3.3) * .6) * scale;
+  const wt = flameWobbleWarpedT(t);
+  const wobble = (Math.sin(wt * 9) * 1.4 + Math.sin(wt * 3.3) * .6) * scale;
   const tipY = -13 * scale;
   ctx.fillStyle = invuln ? FLAME_INVULN_COLOR : lerpColor(FLAME_FULL_COLOR, EMBER, 1 - clamp(hpFrac, 0, 1));
   ctx.beginPath();
@@ -615,6 +952,13 @@ function drawFlame(x, y, scale = 1, hpFrac = 1, invuln = false) {
   ctx.bezierCurveTo(-3 * scale, 1 * scale, -3 * scale, -3 * scale, wobble * .6, -7 * scale);
   ctx.bezierCurveTo(3 * scale, -3 * scale, 3 * scale, 1 * scale, 0, 5 * scale);
   ctx.stroke();
+  // A brighter core, stretched up toward the tip — using a warm pale gold
+  // instead of stark white, so it reads as heat rather than a flat white
+  // patch, and tall enough to actually fill the flame's own silhouette
+  // instead of leaving a bare gap above it.
+  ctx.globalAlpha = .4; ctx.fillStyle = '#fff6c2';
+  ctx.beginPath(); ctx.ellipse(wobble * .3, -1 * scale, 3 * scale, 7 * scale, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
@@ -625,6 +969,35 @@ function drawFlame(x, y, scale = 1, hpFrac = 1, invuln = false) {
 // The flame itself is always drawn at the same (x,y) as drawFlame's own
 // callers used to, so the collision point never moves — only the wax beneath
 // it grows or shrinks.
+// The player's own small, subtle flame-glow — the SAME small glow
+// everywhere the candle avatar appears (title screen, intro cutscene, hub
+// exploration, battle) rather than a separate, much bigger "ambient" version
+// on the non-gameplay screens; a quiet sense of the flame casting a little
+// light of its own, not a centerpiece competing with everything else on
+// screen. Slightly elliptical (taller than wide) and centered a couple px
+// above the candle's own anchor, matching drawFlame's actual shape/center —
+// a true circle centered on the candle's base wouldn't actually match it.
+// `dimMult` (0-1) additionally shrinks/dims it further on top of `scale` —
+// only battle's own HP-based guttering ever passes anything but 1.
+function drawSoulGlow(x, y, scale = 1, dimMult = 1) {
+  const t = performance.now() / 1000;
+  // The base rate (.7) is one full pulse every ~9s (2π/.7). A slow secondary
+  // oscillator (~57s cycle) drifts the actual rate between 1x and 1.4x that
+  // — so it's sometimes up to 40% quicker (as fast as a ~6.4s cycle) — for a
+  // less mechanically-constant, more organic flicker instead of one fixed
+  // tempo forever.
+  const pulseSpeedMult = 1 + .4 * (.5 + .5 * Math.sin(t * .11));
+  const pulse = .5 + .5 * Math.sin(t * .7 * pulseSpeedMult);
+  const mult = scale * dimMult * .81; // another 10% off on top of the earlier size cut
+  const outerR = (18 + pulse * 3) * mult, innerR = (9 + pulse * 2) * mult;
+  ctx.save();
+  // Another 10% off across the board, on top of the earlier cuts.
+  ctx.globalAlpha = (.0373248 + .017915904 * pulse) * dimMult; ctx.fillStyle = EMBER;
+  ctx.beginPath(); ctx.ellipse(x, y - 2 * scale, outerR, outerR * 1.25, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = (.05971968 + .02985984 * pulse) * dimMult; ctx.fillStyle = FLAME_FULL_COLOR;
+  ctx.beginPath(); ctx.ellipse(x, y - 2 * scale, innerR, innerR * 1.25, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
 function drawCandle(x, y, scale = 1, hpFrac = 1, invuln = false) {
   // Kept deliberately small — the wax is set dressing, not the hitbox. The
   // collision circle (see battle-core's updateBattle) stays centered on this
@@ -637,7 +1010,7 @@ function drawCandle(x, y, scale = 1, hpFrac = 1, invuln = false) {
   const wickY = 4 * scale, bodyH = lerp(4, 11, frac) * scale, baseY = wickY + bodyH, bodyW = 8 * scale;
 
   ctx.save(); ctx.translate(x, y);
-  ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+  ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = .5;
   ctx.beginPath();
   ctx.moveTo(-bodyW / 2 + 1.5 * scale, wickY);
   ctx.lineTo(-bodyW / 2, wickY + 3 * scale);
@@ -649,15 +1022,61 @@ function drawCandle(x, y, scale = 1, hpFrac = 1, invuln = false) {
   ctx.fill(); ctx.stroke();
 
   if (bodyH > 5 * scale) {
-    ctx.globalAlpha = .5;
-    line(-bodyW / 2 + 2 * scale, wickY + 3 * scale, -bodyW / 2 + 2 * scale, baseY - 1.5 * scale, 1);
-    ctx.globalAlpha = 1;
+    // A highlight/shadow pair instead of one flat grey seam down the middle
+    // — reads as a rounded wax cylinder catching light on one side and
+    // falling into shadow on the other, instead of a single smudged line.
+    // Highlight on the right (same side as the drip) and shadow on the
+    // left — the drip reads better sitting in the "lit" side than fighting
+    // the shadow line for the same space.
+    ctx.save();
+    ctx.strokeStyle = '#000'; ctx.globalAlpha = .35;
+    line(-bodyW / 2 + 1.6 * scale, wickY + 3 * scale, -bodyW / 2 + 1.6 * scale, baseY - 1.5 * scale, .9);
+    ctx.strokeStyle = '#fff'; ctx.globalAlpha = .4;
+    line(bodyW / 2 - 1.6 * scale, wickY + 3 * scale, bodyW / 2 - 1.6 * scale, baseY - 1.5 * scale, .9);
+    // A faint pooled-wax rim right at the base — smaller and fainter than
+    // before, just a hint rather than a distinct ring.
+    ctx.globalAlpha = .15; ctx.lineWidth = .5;
+    ctx.beginPath(); ctx.ellipse(0, baseY - .4 * scale, bodyW / 2 - 1.4 * scale, .5 * scale, 0, 0, Math.PI); ctx.stroke();
+    ctx.restore();
   }
-  line(0, wickY, 0, wickY - 3 * scale, 1.5);
+  // The drip disappears entirely below 1/3 HP — not enough wax left for a
+  // visible drip to make sense, and it sidesteps a real bug: at very low
+  // bodyH, the drip's fixed vertical offset could place it above the
+  // remaining wax entirely, reading as disconnected/floating.
+  if (frac > 1 / 3) {
+    // A small wax drip on the opposite side, up toward the top and nudged
+    // left of the edge — the wax is melting unevenly, not a perfectly
+    // uniform pillar. Open at the top (no stroke closing it off there)
+    // instead of a fully-closed shape — same convention artists use for a
+    // drip still attached to a surface: fill() closes the gap implicitly
+    // for solid color, but stroke() only traces the two curves actually
+    // drawn, leaving the top open rather than capped with a seam.
+    const dripY = wickY + 3 * scale + bodyH * .5 - 5.5 * scale, dripX = bodyW / 2 - 2.1 * scale;
+    // Shrinks up to 50% as the candle itself shrinks toward that same 1/3
+    // HP threshold — a smaller candle should drip smaller drops, not the
+    // same size regardless, right up until it disappears entirely. Anchored
+    // at (dripX, dripY), its own attachment point, so it shrinks toward
+    // where it clings to the wax rather than drifting off it.
+    const dripScale = lerp(.5, 1, clamp((frac - 1 / 3) / (1 - 1 / 3), 0, 1));
+    const dripGap = .4 * scale * dripScale;
+    ctx.beginPath();
+    ctx.moveTo(dripX + dripGap, dripY);
+    ctx.quadraticCurveTo(dripX + 1.5 * scale * dripScale, dripY + 2.25 * scale * dripScale, dripX, dripY + 3.75 * scale * dripScale);
+    ctx.quadraticCurveTo(dripX - 1.5 * scale * dripScale, dripY + 2.25 * scale * dripScale, dripX - dripGap, dripY);
+    ctx.fill(); ctx.lineWidth = .5; ctx.stroke(); ctx.lineWidth = 1;
+  }
+  // A slight bend instead of a perfectly straight vertical wick — reads as
+  // hand-lit/organic rather than a ruler-drawn line.
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, wickY); ctx.lineTo(.6 * scale, wickY - 1.5 * scale); ctx.lineTo(-.3 * scale, wickY - 3 * scale);
+  ctx.stroke();
   ctx.restore();
 
-  // Smaller than the raw scale, to match the candle body beneath it.
-  drawFlame(x, y, scale * .585, hpFrac, invuln);
+  // Smaller than the raw scale, to match the candle body beneath it. Another
+  // 10% off on top of that (see battle.soul.r, battle-core.js, shrunk the
+  // same 10% to match).
+  drawFlame(x, y, scale * .585 * .9, hpFrac, invuln);
 }
 
 // A faint trail of wax dabs left behind as the candle moves — one shared
@@ -681,19 +1100,28 @@ function drawCandleTrail(x, y, scale, hpFrac = 1) {
   const bx = x, by = y + baseY;
   const now = performance.now();
   if (!candleTrailLastPos) {
-    candleTrail.push({ x: bx, y: by, t: now, scale });
+    candleTrail.push({ x: bx, y: by, t: now, scale, rot: rand(0, Math.PI * 2) });
     candleTrailLastPos = { x: bx, y: by };
   } else {
     const d = dist(bx, by, candleTrailLastPos.x, candleTrailLastPos.y);
     if (d > 260) { candleTrail.length = 0; candleTrailLastPos = { x: bx, y: by }; } // a teleport, not a walk
-    else if (d > 6) { candleTrail.push({ x: bx, y: by, t: now, scale }); candleTrailLastPos = { x: bx, y: by }; }
+    else if (d > 6) { candleTrail.push({ x: bx, y: by, t: now, scale, rot: rand(0, Math.PI * 2) }); candleTrailLastPos = { x: bx, y: by }; }
   }
   candleTrail = candleTrail.filter(p => now - p.t < CANDLE_TRAIL_LIFE);
   ctx.save(); ctx.fillStyle = '#fff';
   for (const p of candleTrail) {
-    ctx.globalAlpha = (1 - (now - p.t) / CANDLE_TRAIL_LIFE) * .5;
-    const s = 2 * p.scale;
-    ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
+    const ageFrac = (now - p.t) / CANDLE_TRAIL_LIFE;
+    ctx.globalAlpha = (1 - ageFrac) * .5;
+    // 3.75 (was 2.5, itself already 25% bigger than the original fixed 2) —
+    // another 50% on top — shrinking to nothing right as it finishes fading,
+    // instead of staying a constant size the whole time and just blinking
+    // out at the end. Each dab keeps its own fixed random rotation (set once
+    // at creation, see the push() calls above) instead of every square
+    // sitting perfectly axis-aligned.
+    const s = lerp(3.75, 0, ageFrac) * p.scale;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+    ctx.fillRect(-s / 2, -s / 2, s, s);
+    ctx.restore();
   }
   ctx.restore();
 }
@@ -863,9 +1291,15 @@ function drawErifHand(hand) {
     // was inheriting whatever was last set, which reads as plain white most
     // of the time. When the palm is filled solid white (vulnerable, not
     // damaged) that silently rendered the letter white-on-white and made it
-    // unreadable exactly when identifying the ward matters most.
+    // unreadable exactly when identifying the ward matters most. Saved/
+    // restored (wasn't before) since this can set black — left unrestored,
+    // that leaked into every later same-frame text() call that doesn't set
+    // its own fillStyle (the fight timer among them), rendering it invisible
+    // right as a hand went vulnerable, i.e. right after every slam.
+    ctx.save();
     ctx.fillStyle = (vulnerable && !damaged) ? '#000' : '#fff';
     text(hand.ward[0].toUpperCase(), hand.x, hand.y + 1, 16, 'center', alpha * (vulnerable ? .85 : 1));
+    ctx.restore();
     const pipW = 12, gap = 3, total = HAND_WARD_HP * (pipW + gap) - gap, startX = hand.x - total / 2;
     for (let i = 0; i < HAND_WARD_HP; i++) {
       ctx.save(); ctx.globalAlpha = alpha;
@@ -900,9 +1334,16 @@ function drawErifHeadHUD() {
   // than trying to wrap the call in an outer alpha, which drawBossIcon would
   // just stomp. Full opacity reads as "part of the fight" even more
   // directly than a partial dim would have.
-  drawBossIcon('erif', hx, hy, false, ERIF_HEAD_SCALE, battle.erifHeadHp);
+  drawBossIcon('erif', hx, hy, false, ERIF_HEAD_SCALE, battle.erifHeadHp, battle.erifBeamPhase);
 
-  const pipW = 13, gap = 3, total = battle.erifHeadMaxHp * (pipW + gap) - gap, startX = hx - total / 2, pipY = hy + 40 + 132 * ERIF_HEAD_SCALE;
+  // Pulled closer to the head (132 -> 85) and framed in EMBER — nothing
+  // previously marked this specifically as ERIF'S OWN hp (as opposed to,
+  // say, a hand's own ward-hp pips just above it), so at a glance it read as
+  // just another anonymous pip row rather than clearly his.
+  const pipW = 13, gap = 3, total = battle.erifHeadMaxHp * (pipW + gap) - gap, startX = hx - total / 2, pipY = hy + 40 + 110 * ERIF_HEAD_SCALE;
+  ctx.save(); ctx.strokeStyle = EMBER; ctx.lineWidth = 1.5;
+  ctx.strokeRect(startX - 5, pipY - 5, total + 10, 22);
+  ctx.restore();
   for (let i = 0; i < battle.erifHeadMaxHp; i++) {
     ctx.save();
     ctx.strokeStyle = ctx.fillStyle = '#fff'; ctx.lineWidth = 1.5;
@@ -923,6 +1364,29 @@ function drawErifBounceBall(ball) {
   ctx.fillStyle = '#fff';
   ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = EMBER; ctx.lineWidth = 1.5; ctx.stroke();
+}
+
+// The Reckoning's rarer gem-shard variant (see spawnErifGemShard/
+// updateErifGemShards, erif.js) — same faceted judgment-gem shape as
+// drawBossIcon's own gemEye (Verdict/Hourglass), just as a standalone
+// function since gemEye is scoped inside drawBossIcon. Same glow language
+// as the bounce ball above so it still reads as one of Erif's own
+// projectiles, just visibly heavier/more angular.
+function drawErifGemShard(shard) {
+  const r = shard.r * 1.7, spin = performance.now() / 1000 * shard.spin;
+  ctx.save(); ctx.globalAlpha = .25; ctx.fillStyle = EMBER;
+  ctx.beginPath(); ctx.arc(shard.x, shard.y, r * 1.5, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  ctx.save(); ctx.translate(shard.x, shard.y); ctx.rotate(spin);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, -r); ctx.lineTo(r * .7, -r * .3); ctx.lineTo(r * .7, r * .3); ctx.lineTo(0, r); ctx.lineTo(-r * .7, r * .3); ctx.lineTo(-r * .7, -r * .3);
+  ctx.closePath(); ctx.stroke();
+  ctx.strokeStyle = EMBER; ctx.lineWidth = .6;
+  ctx.beginPath(); ctx.moveTo(0, -r); ctx.lineTo(0, r); ctx.moveTo(-r * .7, -r * .3); ctx.lineTo(r * .7, r * .3); ctx.moveTo(r * .7, -r * .3); ctx.lineTo(-r * .7, r * .3); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(0, 0, r * .28, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
 }
 
 // One of Erif's own eyes (see spawnErifEyeBall/updateErifEyeBalls, erif.js) —
@@ -1017,15 +1481,17 @@ function drawBattle() {
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.strokeStyle = '#fff'; ctx.fillStyle = '#fff';
   const b = battle.box; drawFloorGrid(b.x, b.y, b.w, b.h);
   drawEmbers(); // background layer — behind every hazard/boss/candle drawn below
-  // mode === 'battle' excludes this: battle.phase doesn't actually advance
-  // off PHASE_FINAL_CONVERGENCE until beginErifTrueFinal, at the very end of
-  // the victory screen -> twist dialogue -> Reckoning-intro dialogue chain
-  // (all of which reuse drawBattle underneath them, see drawDialogue) — so
-  // without this check, this purely-atmospheric decoration kept rendering
-  // (frozen, since battle.t isn't advancing during those dialogues) behind
-  // all three of those instead of disappearing the instant the victory
-  // screen begins.
-  if (battle.type === 'erif' && battle.phase === PHASE_FINAL_CONVERGENCE && mode === 'battle') drawFinalConvergenceErifPresence();
+  // Erif's own twist/Reckoning-intro dialogues (mode === 'erifTwist', both
+  // of them — see startErifTwist/startErifReckoningIntro, erif.js) run
+  // entirely on top of drawBattle without battle.phase ever advancing off
+  // PHASE_FINAL_CONVERGENCE until the Reckoning itself actually begins (see
+  // beginErifTrueFinal) — so without this flag, several stale Final-
+  // Convergence-only visuals (the floating hands/drifting Erif backdrop,
+  // the HP row, the fight timer, the phase name, the capture-count title)
+  // all kept showing/rendering whatever they last were the instant Final
+  // Convergence ended, instead of disappearing until the real fight starts.
+  const hideErifTwistHud = battle.type === 'erif' && mode === 'erifTwist';
+  if (battle.type === 'erif' && battle.phase === PHASE_FINAL_CONVERGENCE && !hideErifTwistHud) drawFinalConvergenceErifPresence();
   // Enraged onward (Enraged, Final Convergence, the Reckoning) all skip the
   // header — the arena is tall enough from Enraged on (see ERIF_ENRAGE_BOX,
   // erif.js) that there isn't room for both it and the box, and Erif's own
@@ -1364,6 +1830,7 @@ function drawBattle() {
     ctx.restore();
   }
   for (const ball of battle.erifBounceBalls) drawErifBounceBall(ball);
+  for (const shard of battle.erifGemShards) drawErifGemShard(shard);
   for (const eye of battle.erifEyeBalls) drawErifEyeBall(eye);
   if (battle.erifBeamPhase) drawErifBeam();
   for (const m of battle.marks) {
@@ -1539,7 +2006,7 @@ function drawBattle() {
     ctx.restore();
   }
 
-  if (battle.type === 'erif' && (battle.phase === PHASE_CONVERGENCE || battle.phase === PHASE_FINAL_CONVERGENCE)) {
+  if (battle.type === 'erif' && (battle.phase === PHASE_CONVERGENCE || battle.phase === PHASE_FINAL_CONVERGENCE) && !hideErifTwistHud) {
     if (battle.convergenceCue) {
       text(`${battle.phase === PHASE_FINAL_CONVERGENCE ? 'BREAK' : 'HOLD'}: ${battle.convergenceCue.toUpperCase()}`, W / 2, statusY(), 20);
       const pct = clamp(battle.convergenceCueTimer / battle.convergenceCueMax, 0, 1);
@@ -1581,7 +2048,9 @@ function drawBattle() {
     const hpFrac = clamp(battle.hp / battle.maxHp, 0, 1);
     const color = battle.hurtTimer > 0 ? FLAME_INVULN_COLOR : lerpColor(FLAME_FULL_COLOR, EMBER, 1 - hpFrac);
     const pulse = .8 + .2 * Math.sin(t * 6);
-    const r = battle.soul.r + 1, cy = -(r + 3);
+    // Offset from the player pushed out 10% (the shield's own radius r,
+    // still matched to the hitbox, is untouched).
+    const r = battle.soul.r + 1, cy = -(r + 3) * 1.1;
     const targetAngle = SHIELD_DIR_ANGLE[dir] || 0;
     if (shieldLastDir === null) { shieldAngleFrom = shieldAngleTo = targetAngle; shieldChangeT = t; shieldLastDir = dir; }
     else if (dir !== shieldLastDir) { shieldAngleFrom = shieldAngleTo; shieldAngleTo = targetAngle; shieldChangeT = t; shieldLastDir = dir; }
@@ -1615,11 +2084,30 @@ function drawBattle() {
 
   for (const s of battle.sparks) {
     const p = clamp(s.life / s.maxLife, 0, 1);
-    ctx.save(); ctx.globalAlpha = p; ctx.strokeStyle = s.color;
-    line(s.x, s.y, s.x - s.vx * .03, s.y - s.vy * .03, 2 * p + .5);
+    ctx.save();
+    if (s.blocky) {
+      // Same blocky-square language drawCandleTrail uses, shrinking as it
+      // fades.
+      ctx.globalAlpha = p; ctx.fillStyle = s.color;
+      const sz = s.size * p;
+      ctx.translate(s.x, s.y); ctx.rotate(Math.atan2(s.vy, s.vx));
+      ctx.fillRect(-sz / 2, -sz / 2, sz, sz);
+    } else {
+      ctx.globalAlpha = p; ctx.strokeStyle = s.color;
+      line(s.x, s.y, s.x - s.vx * .03, s.y - s.vy * .03, 2 * p + .5);
+    }
     ctx.restore();
   }
   drawCandleTrail(battle.soul.x, battle.soul.y, 1, battle.hp / battle.maxHp);
+  // Shrinks/dims up to 40% as HP drops toward 1 — the glow reads as the
+  // flame's own light, so it should gutter as the flame burns down, same
+  // spirit as drawCandle's own shrinking wax. Also nudged down by the exact
+  // same amount the flame's own center drifts as it shrinks toward its
+  // fixed base (flameShrinkDrop) — without this the glow stayed pinned to
+  // where the flame sat at full HP instead of following it down.
+  const hpFrac = clamp(battle.hp / battle.maxHp, 0, 1);
+  const soulFlameBaseScale = .585 * .9; // matches drawCandle's own drawFlame(x, y, scale*.585*.9, ...) call at scale=1
+  drawSoulGlow(battle.soul.x, battle.soul.y + flameShrinkDrop(soulFlameBaseScale, hpFrac), 1, lerp(.6, 1, hpFrac));
   drawCandle(battle.soul.x, battle.soul.y, 1, battle.hp / battle.maxHp, battle.hurtTimer > 0);
   // HP and the time-left readout sit just inside the arena's edges now,
   // rather than all the way out at the screen edges — same information, less
@@ -1632,8 +2120,14 @@ function drawBattle() {
   // From Enraged on, the candle's own shrinking wax is the only HP tell
   // left — deliberately no numeric readout once it's gone.
   const uiY = b.y + b.h;
-  text('HP', 250, uiY + 46, 15, 'left');
-  for (let i = 0; i < battle.maxHp; i++) { ctx.strokeRect(285 + i * 22, uiY + 39, 16, 16); if (i < battle.hp) ctx.fillRect(288 + i * 22, uiY + 42, 10, 10); }
+  // hideErifTwistHud (see its own declaration up top) keeps this — and the
+  // timer/phase-name/capture-count title further down — from showing a
+  // stale Final Convergence snapshot during the twist/Reckoning-intro
+  // dialogues.
+  if (!hideErifTwistHud) {
+    text('HP', 250, uiY + 46, 15, 'left');
+    for (let i = 0; i < battle.maxHp; i++) { ctx.strokeRect(285 + i * 22, uiY + 39, 16, 16); if (i < battle.hp) ctx.fillRect(288 + i * 22, uiY + 42, 10, 10); }
+  }
   if (battle.type === 'archivist') {
     // The Archivist no longer has a meaningful countdown — its duration is
     // just a generous safety cap now (see startEchoRound's win condition in
@@ -1663,7 +2157,7 @@ function drawBattle() {
     // digits (100 and up), which clipped out of the box's sides at that size.
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.strokeRect(685, uiY + 31, 40, 32);
     text(`${left}`, 705, uiY + 47, 20);
-  } else if (battle.type === 'erif') {
+  } else if (battle.type === 'erif' && !hideErifTwistHud) {
     // The whole fight (every phase before the Reckoning) now has its own
     // real hard cap too (see ERIF_FIGHT_TIME_LIMIT, erif.js) — same ticking
     // number as the Reckoning's own box above, just counting down from the
@@ -1675,7 +2169,7 @@ function drawBattle() {
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.strokeRect(685, uiY + 31, 40, 32);
     text(`${left}`, 705, uiY + 47, 20);
   }
-  if (battle.type === 'erif' && battle.phase >= REPRISE_ORDER.length) {
+  if (battle.type === 'erif' && battle.phase >= REPRISE_ORDER.length && !hideErifTwistHud) {
     // Only the phases past the Reprise get a name here now — during the
     // Reprise itself this used to show each lieutenant's own name (e.g.
     // "THE ARCHIVIST"), which is something the player already knows by the
@@ -1708,20 +2202,67 @@ function drawBattle() {
     ctx.restore();
   }
 
-  // Erif's hard time limits (see battle.erifReckoningFadeT/erifFightFadeT,
-  // erif.js — the Reckoning's own 135s cap and the whole fight's 140s cap
-  // respectively, mutually exclusive in practice) — both are loss conditions
-  // (running either clock out ends the fight in defeat), so this fades to
-  // black rather than the white used elsewhere for winning, over the final
-  // 5 seconds, "everything breaking down." Drawn last, on top of everything
-  // else (including the hit edge-flare above), so hazards/hands/the head all
-  // keep rendering right up until the screen actually goes black.
+  if (battle.type === 'erif' && battle.phase === PHASE_LAST_WAGER) drawErifTensionVisualizer();
+
+  // No opaque screen fade for Erif's hard time limits (battle.erifReckoningFadeT/
+  // erifFightFadeT, erif.js — the Reckoning's own 135s cap and the whole
+  // fight's 140s cap, mutually exclusive in practice) — deliberately, so the
+  // player can keep reading the arena right up to the very end. Instead: an
+  // escalating screen shake (main.js's draw()) plus this soft red tint,
+  // capped well under full opacity (.4 max) so the arena stays readable
+  // throughout — "everything's about to give out," not "the screen is gone."
   const fightFade = Math.max(battle.erifReckoningFadeT, battle.erifFightFadeT);
   if (fightFade > 0) {
-    ctx.save(); ctx.fillStyle = '#000'; ctx.globalAlpha = fightFade;
+    ctx.save(); ctx.fillStyle = '#f00'; ctx.globalAlpha = fightFade * .4;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
   }
+}
+// Fills the bottom strip left-to-right as much as it can, in two clusters
+// that share the screen with the HP row/timer/controls legend/volume meters
+// (excludeLo/excludeHi below) instead of being confined to the arena box's
+// own narrow side margins — the box's geometry doesn't actually matter here
+// at all, since this whole strip sits below the box's own bottom edge (uiY)
+// regardless of x. 0 height until half of the Reckoning's own hard timer has
+// elapsed (battle.erifReckoningVisualizerGrowth, erif.js), growing to full
+// height by 75% elapsed (25% remaining), building tension well ahead of the
+// last-5s shake/tint above. Only ever drawn during the Reckoning itself (see
+// the call site's battle.phase === PHASE_LAST_WAGER gate) — not the rest of
+// the Erif fight. Both sides draw the SAME levels array — a real single
+// spectrum split unevenly across two separate clusters read as broken/
+// lopsided, not like a deliberate design, so this duplicates it instead of
+// each side getting its own half.
+// Bar heights come from getVisualizerLevels (audio.js) — real frequency data
+// off a shared analyser every sound in the game passes through, not a faked
+// wobble, so this actually reacts to whatever's currently playing.
+function drawErifTensionVisualizer() {
+  const growth = battle.erifReckoningVisualizerGrowth || 0;
+  if (growth <= 0) return;
+  const b = battle.box, uiY = b.y + b.h;
+  const maxH = (H - uiY) * .96;
+  const barCount = 22, gap = 2, pad = 6;
+  // HP row (285 + maxHp*22, see drawBattle) is the only one of these with a
+  // variable width — the timer box (685-725) and volume-meter panel
+  // (VOL_METER.rightEdge=750, ~108 wide plus its own left-of-label margin)
+  // are always fixed, so their bounds are just folded in as flat numbers.
+  const excludeLo = 232, excludeHi = Math.max(285 + (battle.maxHp || 0) * 22 + 6, 760);
+  const levels = getVisualizerLevels(barCount);
+  const drawSide = (x0, x1) => {
+    const avail = x1 - x0;
+    if (avail < 6) return; // still too tight to draw anything meaningful
+    const barW = Math.max(1, (avail - gap * (barCount - 1)) / barCount);
+    for (let i = 0; i < barCount; i++) {
+      // A small idle floor (.08) so the cluster still reads as "there" and
+      // gently alive through quiet passages, rather than flattening to
+      // nothing between notes.
+      const h = Math.max(2, maxH * growth * Math.max(.08, levels[i]));
+      ctx.fillRect(x0 + i * (barW + gap), H - h, barW, h);
+    }
+  };
+  ctx.save(); ctx.globalAlpha = .45 + .3 * growth; ctx.fillStyle = EMBER;
+  drawSide(pad, excludeLo);
+  drawSide(excludeHi, W - pad);
+  ctx.restore();
 }
 
 // The intro cutscene's own scene — not the hub, which the player hasn't
@@ -1742,6 +2283,10 @@ function drawIntroScene() {
   // The same candle avatar as everywhere else — the cutscene's "you" should
   // look like the "you" the player will actually be controlling next.
   const flameAlpha = idx === 0 ? clamp(lineElapsed / 1.3, 0, 1) : 1;
+  // Same small glow every candle avatar uses (see drawSoulGlow) — fades in
+  // alongside the flame itself instead of popping in at full strength
+  // immediately.
+  drawSoulGlow(W / 2, H / 2 + 70, 1.5, flameAlpha);
   ctx.save(); ctx.globalAlpha = flameAlpha;
   drawCandle(W / 2, H / 2 + 70, 1.5, 1, false);
   ctx.restore();
@@ -2092,7 +2637,6 @@ function drawVolumeMeters() {
 // it) — lets handleCanvasClick stay a one-line dispatcher as more clickable
 // UI (if any) gets added later.
 function handleVolumeMeterClick(mx, my) {
-  if (mode === 'battle' && battle && battle.type === 'erif' && battle.phase >= PHASE_ENRAGED) return false;
   const pad = 6;
   for (let row = 0; row < VOL_ROWS.length; row++) {
     const r = volMeterRect(row);

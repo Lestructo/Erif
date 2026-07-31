@@ -36,6 +36,13 @@ function makeBattle(type) {
     ringArcMode: false,
     ringSwitchTimer: 0,
     verdictJustExitedBurst: false, // consumed once by the next spawnVerdictRing to widen that one transition ring (bosses.js)
+    // The "spaced" burst variation (spawnVerdictSpacedBurst, bosses.js) fires
+    // its 2nd ring after a short delay instead of simultaneously with the
+    // 1st — tracked here rather than a local timer so it survives across
+    // frames regardless of what else updateVerdict does in between.
+    verdictSpacedBurstPending: false,
+    verdictSpacedBurstTimer: 0,
+    verdictSpacedBurstOrigin: null, // snapshotted origin (Reckoning only) so the delayed 2nd ring lands where the 1st did
     // Executioner / Mask (spear + shield)
     lastSpearSide: null,
     needleTimer: .55,
@@ -257,6 +264,7 @@ function makeBattle(type) {
     erifSlamLockoutT: 0, // shared between both hands — blocks either from starting a new chase-and-slam until it clears
     erifHandsLaughedAtFlurry: false,
     erifBounceBalls: [], // universal wall-bouncing projectiles, any finger can fire one
+    erifGemShards: [], // rarer heavier finger-shot variant — straight-line, no bounce, shatters on first hit
     erifEyeBalls: [], // permanent wall-bouncing "eyes" — one popped out per head-HP loss, never break, up to 8 by fight's end
     erifBeamPhase: null, // null | 'telegraph' | 'active' — set on every ward break unless already truthy (see handleErifPunch/updateErifHandHazards, erif.js)
     erifBeamAngle: 0, // locked in when the telegraph starts, then rotates once 'active'
@@ -265,6 +273,10 @@ function makeBattle(type) {
     erifBeamToneTimer: 0, // paces the repeating low hum while 'active' (see updateErifHandHazards, erif.js) — a rapid discrete-tone loop standing in for a sustained drone
     erifReckoningFadeT: 0, // 0-1 black-out progress for the final 5s of the hard time limit (a loss)
     erifFightFadeT: 0, // same black-out progress, but for the whole fight's own hard 140s cap (see ERIF_FIGHT_TIME_LIMIT, erif.js) — every phase before the Reckoning
+    // 0-1 "tension visualizer" growth (see drawErifTensionVisualizer,
+    // render.js), Reckoning-only — 0 until half RECKONING_TIME_LIMIT has
+    // elapsed, then ramps to 1 by 75% elapsed (25% remaining) and stays there.
+    erifReckoningVisualizerGrowth: 0,
     punchFlashT: 0, punchDir: 0, // the boxing-glove shield-punch visual
     trueVictoryStarted: false,
     trueVictoryT: 0,
@@ -285,7 +297,18 @@ function beginBattle() {
   // Moved here from startBoss() — the boss's theme used to start playing the
   // instant the intro ("X notices you") screen appeared, before the player
   // had actually pressed Space to begin the fight.
-  setMusic(battle.type);
+  // Skip to ??? (title.js) — beginErifTrueFinal is fully self-initializing
+  // (ward pool, hands, head HP, its own box/music/mode), so jumping straight
+  // there just means calling it right after the normal setup above instead
+  // of waiting through the whole Reprise/Convergence/Enraged/Final
+  // Convergence progression first. Its own setMusic('erifTrue') call is the
+  // ONLY music-start that should happen on this path — calling setMusic
+  // (battle.type) here too used to start the regular Erif theme for a
+  // moment, only to immediately stop/replace it the instant
+  // beginErifTrueFinal ran, which is exactly what was causing the true
+  // theme to stutter in instead of starting instantly.
+  if (battle.type === 'erif' && skipToTrueFinalEnabled) beginErifTrueFinal();
+  else setMusic(battle.type);
 }
 
 function circleHit(o, r = 6) { return dist(battle.soul.x, battle.soul.y, o.x, o.y) < battle.soul.r + r; }
@@ -305,8 +328,10 @@ function hurt(n = 1) {
   battle.hurtTimer = .75 + UPGRADE_CATALOG.iframe.perStack * (save.upgrades.iframe || 0);
   battle.tookDamage = true;
   tone(70, .12, 'square', .08);
-  // White, not ember — this is wax breaking off the candle, not fire.
-  spawnSparks(battle.soul.x, battle.soul.y, 8, { color: '#fff', speed: [90, 180], life: .4 });
+  // White, not ember — this is wax breaking off the candle, not fire. Blocky
+  // squares (matching drawCandleTrail's own look) instead of thin streak
+  // lines, 25% bigger than the shared default.
+  spawnSparks(battle.soul.x, battle.soul.y, 8, { color: '#fff', speed: [90, 180], life: .4, blocky: true, size: 3.75 });
   // A small burst of embers sputtering directly off the flame, plus the
   // brief shake/flare read by main.js's draw()/render.js's drawBattle().
   for (let i = 0; i < 4; i++) spawnEmber(battle.soul.x + rand(-6, 6), battle.soul.y + rand(-4, 4), { speed: [30, 70], life: [.4, .8] });
@@ -318,6 +343,7 @@ function clearHazards() {
   battle.rings = []; battle.spears = []; battle.telegraphs = []; battle.shapes = []; battle.hands = [];
   battle.bullets = []; battle.lasers = []; battle.sigils = [];
   battle.ringGapA = null; battle.ringArcMode = false; battle.ringArcDirection = choose([-1, 1]); battle.ringSwitchTimer = 0;
+  battle.verdictSpacedBurstPending = false; battle.verdictSpacedBurstTimer = 0; battle.verdictSpacedBurstOrigin = null;
   battle.lastSpearSide = null; battle.needleTimer = .55; battle.specialTimer = 2.6; battle.lastSpearSpecialDense = false;
   battle.shapeZones = []; battle.shapeCue = null; battle.shapeState = ''; battle.shapeTimer = 0;
   battle.seekMax = 0; battle.judgmentMax = 0; battle.slamTargets = null; battle.slamImpacted = false;
@@ -351,6 +377,7 @@ function clearHazards() {
   battle.convergenceDeck = []; battle.marks = []; battle.blasts = []; battle.aimedBullets = []; battle.aimedBulletTimer = .5;
   battle.inkTimer = 0; battle.inkSpawn = 0;
   battle.erifBounceBalls = [];
+  battle.erifGemShards = [];
   battle.erifEyeBalls = [];
   battle.enrageRingTimer = 0; battle.enrageVolleyTimer = 0; battle.enrageShardTimer = 0; battle.enrageQuestionTimer = 0;
   battle.enrageSegmentIndex = 0; battle.enrageSegmentProgress = 0;
@@ -378,6 +405,7 @@ function clearHazardsKeepProjectiles() {
   // they'd just sit there as inert clutter for the rest of the Reprise.
   battle.sigils = [];
   battle.ringGapA = null; battle.ringArcMode = false; battle.ringArcDirection = choose([-1, 1]); battle.ringSwitchTimer = 0;
+  battle.verdictSpacedBurstPending = false; battle.verdictSpacedBurstTimer = 0; battle.verdictSpacedBurstOrigin = null;
   battle.lastSpearSide = null; battle.needleTimer = .55; battle.specialTimer = 2.6; battle.lastSpearSpecialDense = false;
   battle.shapeZones = []; battle.shapeCue = null; battle.shapeState = ''; battle.shapeTimer = 0;
   battle.seekMax = 0; battle.judgmentMax = 0; battle.slamTargets = null; battle.slamImpacted = false;
@@ -524,7 +552,9 @@ function updateBattle(dt) {
   battle.hitFlashT = Math.max(0, battle.hitFlashT - dt);
   // The candle's collision radius shrinks with its remaining wax (HP) — a
   // guttering candle is a smaller target, mirroring the shrinking visual.
-  battle.soul.r = lerp(4.5, 7, clamp(battle.hp / battle.maxHp, 0, 1));
+  // Bounds cut 10% (4.5/7 -> 4.05/6.3) to match the flame's own 10% visual
+  // size reduction (drawCandle, render.js).
+  battle.soul.r = lerp(4.05, 6.3, clamp(battle.hp / battle.maxHp, 0, 1));
   updateSparks(dt);
   // A low-rate ambient ember drifting up off the arena floor — same shared
   // particle layer the title screen uses (see spawnEmber/updateEmbers,

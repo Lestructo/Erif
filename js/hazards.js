@@ -9,10 +9,14 @@
 // damage — used across every mechanic instead of relying on the screen-flash
 // alone to sell a hit.
 function spawnSparks(x, y, count, opts = {}) {
-  const { speed = [60, 140], life = .35, color = '#fff' } = opts;
+  // blocky/size — an optional square-particle variant (see hurt(),
+  // battle-core.js) instead of every spark burst being the same thin
+  // streak-line, matching the game's other blocky-square particle
+  // (drawCandleTrail) rather than introducing a third look.
+  const { speed = [60, 140], life = .35, color = '#fff', blocky = false, size = 3 } = opts;
   for (let i = 0; i < count; i++) {
     const a = rand(0, Math.PI * 2), sp = rand(speed[0], speed[1]);
-    battle.sparks.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life, maxLife: life, color });
+    battle.sparks.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life, maxLife: life, color, blocky, size });
   }
 }
 function updateSparks(dt) {
@@ -34,6 +38,17 @@ function updateSparks(dt) {
 function upgradedSpeed(speed) {
   return speed * (1 + UPGRADE_CATALOG.speed.perStack * (save.upgrades.speed || 0));
 }
+// The candle's drawn wax body (drawCandle, render.js — same wickY/bodyH
+// formula, at the battle candle's own scale=1) extends noticeably further
+// below its own anchor than battle.soul.r accounts for on its own (e.g. 15px
+// of wax at full HP vs. soul.r's own 6.3) — clamping the bottom edge on
+// soul.r alone let the visual wax clip into the bottom of the arena, even
+// though the logical top/left/right edges (where the flame/body are
+// narrower) were already fine on that same radius.
+function soulVisualBottomMargin() {
+  const hpFrac = clamp(battle.hp / battle.maxHp, 0, 1);
+  return 4 + lerp(4, 11, hpFrac);
+}
 function moveSoulFree(dt, speed = 205) {
   speed = upgradedSpeed(speed);
   const s = battle.soul, b = battle.box;
@@ -45,7 +60,7 @@ function moveSoulFree(dt, speed = 205) {
   if (battle.controlsInverted) { dx = -dx; dy = -dy; }
   if (dx || dy) { const n = Math.hypot(dx, dy); dx /= n; dy /= n; s.x += dx * speed * dt; s.y += dy * speed * dt; }
   s.x = clamp(s.x, b.x + s.r, b.x + b.w - s.r);
-  s.y = clamp(s.y, b.y + s.r, b.y + b.h - s.r);
+  s.y = clamp(s.y, b.y + s.r, b.y + b.h - soulVisualBottomMargin());
 }
 
 function moveSoulWithShield(dt, speed = 225) {
@@ -55,7 +70,7 @@ function moveSoulWithShield(dt, speed = 225) {
   if (battle.controlsInverted) { dx = -dx; dy = -dy; }
   if (dx || dy) { const n = Math.hypot(dx, dy); s.x += dx / n * speed * dt; s.y += dy / n * speed * dt; }
   s.x = clamp(s.x, b.x + s.r, b.x + b.w - s.r);
-  s.y = clamp(s.y, b.y + s.r, b.y + b.h - s.r);
+  s.y = clamp(s.y, b.y + s.r, b.y + b.h - soulVisualBottomMargin());
   // Shield-direction keys invert the same way, via SHIELD_OPPOSITE (data.js)
   // rather than a second hand-written mapping.
   const flip = battle.controlsInverted ? SHIELD_OPPOSITE : null;
@@ -216,7 +231,7 @@ function spawnSpearVolley(hard = false, forcedSide = null, extraDelay = 0, spaci
   }
   tone(145, .06, 'sawtooth', .027);
 }
-function launchSpear(t) {
+function launchSpear(t, silent = false) {
   const b = battle.box, speed = (t.hard ? 470 : 390) * DIFFICULTY.projectileMult;
   let x = t.x, y = t.y, vx = 0, vy = 0;
   if (t.side === 'up') { y = b.y - 18; vy = speed; }
@@ -227,7 +242,12 @@ function launchSpear(t) {
   // (the Reckoning's 910-wide box) so the cap never fires early in a
   // smaller one — it's a ceiling, not a target.
   battle.spears.push({ x, y, vx, vy, side: t.side, r: 8, family: t.family, kind: 'spear', ...hazardAgeFields(5.0) });
-  tone(260, .025, 'square', .018);
+  // silent (see updateSpearHazards' own firing loop) — a wide volley queues
+  // many spears with the exact same telegraph delay, so they all launch on
+  // the same frame; without a cap on how many of them actually sound, a big
+  // volley in a wide arena (the Reckoning's 910px box especially) stacked a
+  // few dozen identical simultaneous oscillators and clipped/crackled.
+  if (!silent) tone(260, .025, 'square', .018);
 }
 // countOverride lets a caller pick the exact burst size (e.g. Erif's
 // Enraged phase alternating 3/5/7 — see updateEnraged) instead of the
@@ -255,7 +275,19 @@ function updateSpearHazards(dt, forgiving = false, launchFn = launchSpear) {
   // launch function, regardless of the caller's default — this lets
   // Convergence run honest Executioner spears and lying Mask spears side by
   // side in the same battle.telegraphs array.
-  for (const t of battle.telegraphs) { t.t -= dt; if (t.t <= 0 && !t.fired) { t.fired = true; (t.mirror ? launchMaskSpear : launchFn)(t); } }
+  // Caps how many spears launching on the SAME frame actually get an audible
+  // launch tone — see launchSpear/launchMaskSpear's own comment on why.
+  let spearLaunchSounds = 0;
+  const SPEAR_LAUNCH_SOUND_CAP = 3;
+  for (const t of battle.telegraphs) {
+    t.t -= dt;
+    if (t.t <= 0 && !t.fired) {
+      t.fired = true;
+      const silent = spearLaunchSounds >= SPEAR_LAUNCH_SOUND_CAP;
+      if (!silent) spearLaunchSounds++;
+      (t.mirror ? launchMaskSpear : launchFn)(t, silent);
+    }
+  }
   battle.telegraphs = battle.telegraphs.filter(t => !t.fired);
   for (const p of battle.spears) {
     p.x += p.vx * dt; p.y += p.vy * dt;

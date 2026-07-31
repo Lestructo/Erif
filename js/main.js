@@ -34,6 +34,7 @@ function togglePause() {
     if (musicMode === 'erif') { try { ensureErifTheme().play().catch(() => {}); } catch {} }
     if (musicMode === 'erifTrue') { try { ensureTrueTheme().play().catch(() => {}); } catch {} }
     tone(180, .05, 'square', .03);
+    pauseReturnArmed = false; // resuming cancels any pending "press again to return" confirm
   } else if (PAUSABLE_MODES.includes(mode)) {
     prePauseMode = mode; mode = 'paused';
     if (musicMode === 'erif') { try { ensureErifTheme().pause(); } catch {} }
@@ -46,10 +47,18 @@ function returnToMainMenuFromPause() {
   battle = null;
   mode = 'title';
   prePauseMode = null;
+  pauseReturnArmed = false;
   tone(120, .2, 'sawtooth', .04);
 }
+// Requires Space twice, same "arm, then confirm" convention the title
+// screen's own reset-save-data button uses (resetArmed, title.js) — a
+// single accidental press used to instantly discard the run in progress.
+let pauseReturnArmed = false;
 function updatePaused(dt) {
-  if (tap(' ')) returnToMainMenuFromPause();
+  if (tap(' ')) {
+    if (!pauseReturnArmed) { pauseReturnArmed = true; tone(160, .1, 'sawtooth', .04); }
+    else returnToMainMenuFromPause();
+  }
 }
 function drawPauseOverlay() {
   ctx.save();
@@ -57,7 +66,8 @@ function drawPauseOverlay() {
   ctx.strokeStyle = ctx.fillStyle = '#fff';
   text('PAUSED', W / 2, H / 2 - 40, 32);
   text('ESC — RESUME', W / 2, H / 2 + 20, 16);
-  text('SPACE — RETURN TO MAIN MENU', W / 2, H / 2 + 50, 16);
+  if (pauseReturnArmed) { ctx.fillStyle = EMBER; text('SPACE AGAIN — RETURN TO MAIN MENU', W / 2, H / 2 + 50, 16); ctx.fillStyle = '#fff'; }
+  else text('SPACE — RETURN TO MAIN MENU', W / 2, H / 2 + 50, 16);
   ctx.restore();
 }
 
@@ -122,19 +132,21 @@ function draw() {
   else if (drawMode === 'dialogue' || drawMode === 'erifTwist') drawDialogue();
   else if (drawMode === 'battle') {
     // A very short, small-amplitude shake on taking a hit (battle.hitShakeT,
-    // set in hurt(), battle-core.js), a second source that ramps in right
-    // alongside either of Erif's hard-timeout black-outs
+    // set in hurt(), battle-core.js), a second source that escalates hard
+    // right alongside either of Erif's hard time limits
     // (battle.erifReckoningFadeT/erifFightFadeT, 0-1 over their last 5s —
-    // see updateErifHandsFinale/updateErif, erif.js) so the screen visibly
-    // rattles apart as it fades, not just goes quietly black, and a third,
-    // much smaller constant rumble the whole time the mouth laser is
-    // actually live (battle.erifBeamPhase === 'active', not the telegraph)
-    // so it reads as something physically tearing loose rather than a
-    // silent, weightless rotation. All three wrap only the arena draw call
-    // so the controls legend/volume meters/pause overlay drawn below stay
-    // put.
+    // see updateErifHandsFinale/updateErif, erif.js — no screen/music fade
+    // there anymore, deliberately; this shake is the ONLY warning that the
+    // clock is about to run out), squared rather than linear so it stays
+    // fairly mild until quite late and then gets violent right at the very
+    // end instead of ramping evenly, and a third, much smaller constant
+    // rumble the whole time the mouth laser is actually live
+    // (battle.erifBeamPhase === 'active', not the telegraph) so it reads as
+    // something physically tearing loose rather than a silent, weightless
+    // rotation. All three wrap only the arena draw call so the controls
+    // legend/volume meters/pause overlay drawn below stay put.
     const hitShake = battle ? (battle.hitShakeT / .12) * 4 : 0;
-    const fadeShake = battle ? Math.max(battle.erifReckoningFadeT, battle.erifFightFadeT) * 9 : 0;
+    const fadeShake = battle ? Math.pow(Math.max(battle.erifReckoningFadeT, battle.erifFightFadeT), 2) * 30 : 0;
     const beamShake = battle && battle.erifBeamPhase === 'active' ? 1.5 : 0;
     const shakeMag = hitShake + fadeShake + beamShake;
     if (shakeMag > 0) {
@@ -162,6 +174,16 @@ function draw() {
 }
 
 applyDifficultyTier('normal');
+// Kicks off both of Erif's real-embedded-MP3 themes' fetch/decode here, at
+// page load — the title screen, menus, and hub walk before a player ever
+// reaches Erif give them a real head start (seconds, often much more) to
+// actually finish buffering, rather than only starting the moment the intro
+// screen appears (startBoss, battle-core.js) — which, taken quickly (a
+// player mashing through the title's Skip to ??? for testing, say), might be
+// only a frame or two before setMusic('erifTrue') already wants to play it,
+// nowhere near enough time to have fetched anything yet. ensureXTheme's own
+// `if (!X)` guard makes calling it again later in startBoss a harmless no-op.
+try { ensureErifTheme(); ensureTrueTheme(); } catch {}
 
 let last = performance.now();
 function loop(now) {

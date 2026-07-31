@@ -82,11 +82,18 @@ function updateWardChimeWatch() {
 // allowance the door needs to be crossable, just no longer granted
 // everywhere along the wall (that was the actual "walk through solid wall"
 // bug: the old clamp gave every position that same overshoot, doorway or not).
+// The candle's drawn wax body (drawCandle, render.js) extends noticeably
+// further below its own anchor point than player.r accounts for (~14px at
+// the hub's .9 scale/full "HP", vs. player.r's 8) — clamping the bottom edge
+// on player.r alone let the visual wax clip into the floor/wall there, even
+// though the logical top/left/right edges (where the flame/body are
+// narrower) were already fine on that same margin.
+const PLAYER_VISUAL_BOTTOM_MARGIN = 14;
 function clampToRoom(b) {
   // Keyed on `perfected`, not `ward` — a door stays walkable until its
   // lieutenant is beaten hitless, not just beaten (see save.perfected, data.js).
   const relevantDoors = room === 'center' ? doors.filter(d => !save.perfected[d.room]) : [returnDoorFor(rooms[room].hubDoor)];
-  let minX = b.l + player.r, maxX = b.r - player.r, minY = b.t + player.r, maxY = b.b - player.r;
+  let minX = b.l + player.r, maxX = b.r - player.r, minY = b.t + player.r, maxY = b.b - PLAYER_VISUAL_BOTTOM_MARGIN;
   for (const d of relevantDoors) {
     const p = doorPoint(d, b);
     const aligned = Math.abs((p.axis === 'y' ? player.x : player.y) - p.crossPos) < d.gap;
@@ -108,8 +115,11 @@ function updateExplore(dt) {
   if (musicMode !== 'explore') setMusic('explore');
   updateWardChimeWatch();
   const b = roomBounds();
-  let dx = (keys['d'] || keys['arrowright'] || keys['l'] ? 1 : 0) - (keys['a'] || keys['arrowleft'] || keys['j'] ? 1 : 0);
-  let dy = (keys['s'] || keys['arrowdown'] || keys['k'] ? 1 : 0) - (keys['w'] || keys['arrowup'] || keys['i'] ? 1 : 0);
+  // Arrow keys deliberately excluded here — they're reserved for shield
+  // control during battle (see moveSoulWithShield, hazards.js) and shouldn't
+  // also walk the player around the hub.
+  let dx = (keys['d'] || keys['l'] ? 1 : 0) - (keys['a'] || keys['j'] ? 1 : 0);
+  let dy = (keys['s'] || keys['k'] ? 1 : 0) - (keys['w'] || keys['i'] ? 1 : 0);
   if (dx || dy) {
     const n = Math.hypot(dx, dy); dx /= n; dy /= n; player.x += dx * player.speed * dt; player.y += dy * player.speed * dt;
     // A quiet, rate-limited footstep tick while actually moving — tripled
@@ -192,13 +202,23 @@ function drawPortal() {
   const ringColor = active ? emberGlow : '#fff';
 
   ctx.save();
+  if (active) {
+    // A slow ember pulse glow behind the ring — same heat-radiating language
+    // Erif's own portrait aura uses, so the portal reads as a real mystic
+    // gateway waking up rather than a flat stroked circle.
+    const pulse = .5 + .5 * Math.sin(t * 1.6);
+    ctx.save(); ctx.globalAlpha = .16 + .14 * pulse; ctx.strokeStyle = emberGlow; ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.arc(cx, cy, 68 + pulse * 6, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
   ctx.strokeStyle = ringColor; ctx.globalAlpha = active ? 1 : .4; ctx.lineWidth = active ? 3 : 2;
   ctx.beginPath(); ctx.arc(cx, cy, 62, 0, Math.PI * 2); ctx.stroke();
   if (active) {
-    ctx.save(); ctx.translate(cx, cy); ctx.rotate(t * .5);
-    ctx.setLineDash([14, 10]); ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(0, 0, 46, 0, Math.PI * 2); ctx.stroke();
-    ctx.setLineDash([]);
+    // An inscribed rune-ring instead of a plain dashed spinner — short
+    // radial ticks read as engraved marks rather than a generic loading-
+    // spinner dash pattern.
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(t * .5); ctx.lineWidth = 1.5;
+    for (let i = 0; i < 16; i++) { ctx.save(); ctx.rotate(i * Math.PI / 8); line(0, -42, 0, -50, 1.5); ctx.restore(); }
     ctx.restore();
   }
   ctx.restore();
@@ -218,6 +238,10 @@ function drawPortal() {
     ctx.moveTo(0, -13); ctx.lineTo(10, 0); ctx.lineTo(0, 13); ctx.lineTo(-10, 0); ctx.closePath();
     if (filled) {
       ctx.fill(); ctx.fillStyle = '#000'; text(name[0].toUpperCase(), 0, 1, 12, 'center', 1);
+      // A small rune flourish at each point once lit — reads as an engraved
+      // rune-stone rather than a bare filled diamond.
+      ctx.strokeStyle = emberGlow; ctx.lineWidth = 1; ctx.globalAlpha = .8;
+      line(0, -13, 0, -18, 1); line(10, 0, 15, 0, 1); line(0, 13, 0, 18, 1); line(-10, 0, -15, 0, 1);
     } else {
       ctx.stroke(); text(name[0].toUpperCase(), 0, 1, 12, 'center', .45);
     }
@@ -284,5 +308,9 @@ function drawExplore() {
   }
 
   drawCandleTrail(player.x, player.y, .9);
+  // Same small glow every candle avatar uses (see drawSoulGlow, render.js) —
+  // was previously only ever drawn in battle, so the player's own flame
+  // read as dark/lightless while just walking around the hub.
+  drawSoulGlow(player.x, player.y, .9);
   drawCandle(player.x, player.y, .9, 1, false);
 }
