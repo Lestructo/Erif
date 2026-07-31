@@ -169,7 +169,15 @@ function verdictPhaseProgress(hard = false) {
 // more per ring, gaps are a bit tighter, direction flips come sooner, and
 // both phases spawn rings noticeably more often.
 function spawnVerdictRing(hard = false) {
-  const gapA = rand(0, Math.PI * 2);
+  // Align with whatever ring is already innermost/most recent (which could
+  // be a leftover rotating/burst ring right after that phase just ended,
+  // not just another normal ring) instead of rolling a fully independent
+  // random gap — same reasoning as beginVerdictSpiral's own alignment below,
+  // just for the reverse direction: without it, the first normal ring after
+  // a burst period could easily land with no shared safe window against
+  // whatever burst ring is still mid-flight.
+  const lastRing = battle.rings[battle.rings.length - 1];
+  const gapA = lastRing ? lastRing.gapA : rand(0, Math.PI * 2);
   spawnRing(hard, gapA, 360, hard ? 1.2 : .85, hard ? 185 : 145, hard ? .36 : .52);
   tone(180, .03, 'sine', .025);
 }
@@ -204,6 +212,14 @@ function updateVerdict(dt, hard = false, moveFn = moveSoulFree) {
   const rotating = verdictPhaseProgress(hard) >= .5;
 
   if (rotating && !battle.ringArcMode) beginVerdictSpiral(hard);
+  // Reset the instant rotating ends, not left stale — verdictPhaseProgress's
+  // modulo cycle can flip back and forth more than once within a single
+  // fight (or even a single Reprise segment, depending on where its own
+  // start lands in the cycle), and without this, only the very first entry
+  // into rotating mode ever got beginVerdictSpiral's gap-alignment fix —
+  // every later re-entry silently skipped it, back to an unaligned random
+  // gap.
+  if (!rotating) battle.ringArcMode = false;
   if (rotating) {
     battle.ringSwitchTimer -= dt;
     if (battle.ringSwitchTimer <= 0) {
@@ -288,20 +304,31 @@ function updateGaleFlags(dt) {
 // countdown before actually crossing the box, same shrinking-telegraph
 // convention as everything else in this game.
 // allowExtra: rolls a chance to queue 1-3 bonus rows from a different side,
-// each arriving 2-3s after the last (see updateWindLines, which ticks the
-// queue) — centralized here so every caller (the standalone/Reprise fight's
-// own cadence, Convergence/Final Convergence's one-shot cue, Enraged's and
-// the Reckoning's one-shot gusts) gets the same chance for free, rather than
-// needing each call site to remember to roll it separately. Extras spawn
-// with allowExtra=false so one bonus row can't itself chain into more.
+// each arriving further spaced out from the last (see updateWindLines,
+// which ticks the queue) — centralized here so every caller (the
+// standalone/Reprise fight's own cadence, Convergence/Final Convergence's
+// one-shot cue, Enraged's and the Reckoning's one-shot gusts) gets the same
+// chance for free, rather than needing each call site to remember to roll it
+// separately. Extras spawn with allowExtra=false so one bonus row can't
+// itself chain into more, and a new roll only happens once any previous
+// batch has fully finished (queue back at 0) — without that guard, a fresh
+// main-cadence roll landing mid-batch could effectively stack past 3.
 function spawnWindRow(hard = false, dirOverride = null, allowExtra = true) {
+  // A hard global floor: no two wind-row spawns, from ANY source (main
+  // cadence, a queued extra, a gust-synced one-shot), can land within 1s of
+  // each other — without this, an extra's own spacing could still coincide
+  // with an unrelated fresh spawn and dump two full rows on the player at
+  // once.
+  if (battle.t - (battle.windRowLastSpawnT ?? -999) < 1) return;
+  battle.windRowLastSpawnT = battle.t;
   const b = battle.box, dir = dirOverride || battle.galeWindDir || choose(['up', 'down', 'left', 'right']);
   const axisLen = (dir === 'up' || dir === 'down') ? b.w : b.h;
   // Varies row to row now (was a fixed 5, or 6 on hard) — 4/5/6 normally,
   // 5/6/7 on hard, so a row isn't always the same width to read at a glance.
   const count = choose(hard ? [5, 6, 7] : [4, 5, 6]);
   const spacing = axisLen / (count + 1);
-  const speed = (hard ? 300 : 245) * DIFFICULTY.projectileMult;
+  // 25% slower (300/245 -> 225/183.75).
+  const speed = (hard ? 300 : 245) * .75 * DIFFICULTY.projectileMult;
   const warnT = (hard ? .5 : .75) * DIFFICULTY.telegraphMult;
   for (let i = 1; i <= count; i++) {
     battle.windLines.push({
@@ -313,11 +340,11 @@ function spawnWindRow(hard = false, dirOverride = null, allowExtra = true) {
     });
   }
   tone(210, .08, 'sine', .025);
-  if (allowExtra && Math.random() < (hard ? .4 : .3)) {
+  if (allowExtra && battle.windRowExtraQueue <= 0 && Math.random() < (hard ? .4 : .3)) {
     battle.windRowExtraHard = hard;
     battle.windRowExtraDir = dir;
     battle.windRowExtraQueue = Math.floor(rand(1, 4));
-    battle.windRowExtraTimer = rand(2, 3);
+    battle.windRowExtraTimer = rand(3, 4.5);
   }
 }
 // travelOverride lets the renderer sample earlier points along the same
@@ -342,7 +369,7 @@ function updateWindLines(dt) {
       const otherDirs = ['up', 'down', 'left', 'right'].filter(d => d !== battle.windRowExtraDir);
       spawnWindRow(battle.windRowExtraHard, choose(otherDirs), false);
       battle.windRowExtraQueue--;
-      battle.windRowExtraTimer = rand(2, 3);
+      battle.windRowExtraTimer = rand(3, 4.5);
     }
   }
   for (const w of battle.windLines) {
@@ -368,7 +395,20 @@ function beginGaleGust(hard) {
   battle.galeGustPhase = 'telegraph';
   const warnT = (hard ? 1.0 : 1.3) * DIFFICULTY.telegraphMult;
   battle.galeGustTimer = warnT; battle.galeGustMax = warnT;
+  battle.galeGustWindRowSynced = false;
   tone(200, .12, 'sine', .03);
+}
+// Spawns a gust-tied wind row partway through the telegraph rather than at
+// launch, timed so the row's OWN warning telegraph finishes right as the
+// gust actually goes active — the row's sweep then lands while
+// controlsInverted is true instead of trailing in after the fact, so the
+// wind pressures the player exactly when they're already fighting inverted
+// controls. Fires once per gust (galeGustWindRowSynced, reset in
+// beginGaleGust above).
+function tickGaleWindRowSync(hard) {
+  if (battle.galeGustPhase !== 'telegraph' || battle.galeGustWindRowSynced) return;
+  const windRowWarnT = (hard ? .5 : .75) * DIFFICULTY.telegraphMult;
+  if (battle.galeGustTimer <= windRowWarnT) { spawnWindRow(hard); battle.galeGustWindRowSynced = true; }
 }
 function launchGaleGust(hard) {
   battle.galeGustPhase = 'active';

@@ -676,15 +676,15 @@ function updateOneShotGaleGust(dt, hard, usedField, timerField, requireGaleCue =
     return;
   }
   if (battle.galeGustPhase === 'telegraph') {
+    // Enraged's one-shot gust had no wind-line row at all (unlike the
+    // standalone/Reprise fight and Final Convergence's own gale cue, which
+    // already spawns one separately) — requireGaleCue excludes Final
+    // Convergence here so it doesn't end up with two. Synced (see
+    // tickGaleWindRowSync, bosses.js) so the row's sweep lands while
+    // controlsInverted is true instead of trailing in afterward.
+    if (!requireGaleCue) tickGaleWindRowSync(hard);
     battle.galeGustTimer -= dt;
-    if (battle.galeGustTimer <= 0) {
-      launchGaleGust(hard);
-      // Enraged's one-shot gust had no wind-line row at all (unlike the
-      // standalone/Reprise fight and Final Convergence's own gale cue,
-      // which already spawns one separately) — requireGaleCue excludes
-      // Final Convergence here so it doesn't end up with two.
-      if (!requireGaleCue) spawnWindRow(hard);
-    }
+    if (battle.galeGustTimer <= 0) launchGaleGust(hard);
   } else if (battle.galeGustPhase === 'active') {
     const b = battle.box, s = battle.soul;
     s.x = clamp(s.x + battle.windVX * dt, b.x + s.r, b.x + b.w - s.r);
@@ -1535,14 +1535,13 @@ function updateErifHandHazards(dt) {
   updateErifBounceBalls(dt);
   updateErifEyeBalls(dt);
   if (battle.galeGustPhase === 'telegraph') {
+    // The Reckoning's gale-ward finger attack only ever fired a gust — no
+    // wind-line row like every other gale context has. Added, synced (see
+    // tickGaleWindRowSync, bosses.js) so the row's sweep lands while
+    // controlsInverted is true instead of trailing in afterward.
+    tickGaleWindRowSync(true);
     battle.galeGustTimer -= dt;
-    if (battle.galeGustTimer <= 0) {
-      launchGaleGust(true);
-      // The Reckoning's gale-ward finger attack only ever fired a gust —
-      // no wind-line row like every other gale context has. Added here so
-      // it's consistent with the rest.
-      spawnWindRow(true);
-    }
+    if (battle.galeGustTimer <= 0) launchGaleGust(true);
   } else if (battle.galeGustPhase === 'active') {
     const b = battle.box, s = battle.soul;
     s.x = clamp(s.x + battle.windVX * dt, b.x + s.r, b.x + b.w - s.r);

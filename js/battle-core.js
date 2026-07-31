@@ -146,6 +146,7 @@ function makeBattle(type) {
     galeGustPhase: null,
     galeGustTimer: 0,
     galeGustMax: 0,
+    galeGustWindRowSynced: false, // whether this gust's telegraph-synced wind row (see tickGaleWindRowSync, bosses.js) has already fired
     galeGustCooldown: 0,
     controlsInverted: false,
     windVX: 0,
@@ -168,6 +169,7 @@ function makeBattle(type) {
     windRowExtraTimer: 0,
     windRowExtraHard: false,
     windRowExtraDir: null,
+    windRowLastSpawnT: null, // battle.t of the most recent wind-row spawn from any source — enforces the 1s global floor between them
     // Erif's Convergence / Enraged / Final Convergence (phases 7-9)
     phaseStartT: 0,
     convergenceOrbit: 0,
