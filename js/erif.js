@@ -416,7 +416,7 @@ function spawnConvergenceSpears(family, hard = false, forcedSide = null, extraDe
 }
 // Shared by Convergence and Final Convergence — spawns one family's hazard,
 // aimed at or from that family's current sigil position.
-function spawnConvergenceCueHazard(cue, target) {
+function spawnConvergenceCueHazard(cue, target, reckoning = false) {
   const box = battle.box, cx = box.x + box.w / 2, cy = box.y + box.h / 2;
   if (cue === 'verdict') {
     // Back to plain, regular rings — one at a time, rotating, always with a
@@ -446,7 +446,13 @@ function spawnConvergenceCueHazard(cue, target) {
     // grains too — this cue was only ever spawning orbs, never any actual
     // sand, since updateFinalConvergence didn't call updateSandGrains either
     // (fixed there too).
-    for (let i = 0; i < 2; i++) {
+    // Half the orbs in the Reckoning specifically (1, not 2) — with two
+    // hands independently cycling through wards over a much longer fight,
+    // this cue firing repeatedly piled up orbs faster than they realistically
+    // clear (their own natural lifetime is a ~20s forced-outward drift, see
+    // updateHourglassOrbs — not a bug, just a high spawn rate against that).
+    // Convergence/Final Convergence (reckoning=false) are unaffected.
+    for (let i = 0; i < (reckoning ? 1 : 2); i++) {
       spawnHourglassOrb(false);
       battle.hourglassOrbs[battle.hourglassOrbs.length - 1].family = cue;
     }
@@ -1197,11 +1203,13 @@ const HAND_RECHARGE_TIME = 5;
 const ERIF_HEAD_SCALE = .85; // read by render.js's drawErifHeadHUD too
 const RECKONING_TIME_LIMIT = 135, RECKONING_FADE_WINDOW = 5;
 
-// Erif's own mouth laser — fires once per ward break (see handleErifPunch's
-// trigger), alternating direction each time, but skipped entirely if one is
-// already telegraphing/rotating (battle.erifBeamPhase truthy) — a player
-// aggressive enough to break a ward during that danger window is rewarded
-// with no second beam stacking on top of them, rather than punished for it.
+// Erif's own mouth laser — a 2nd-phase mechanic, silent until 4 of the 8
+// wards are broken (see handleErifPunch's trigger), then fires on every
+// break from there on, alternating direction each time, but skipped
+// entirely if one is already telegraphing/rotating (battle.erifBeamPhase
+// truthy) — a player aggressive enough to break a ward during that danger
+// window is rewarded with no second beam stacking on top of them, rather
+// than punished for it.
 // A 3s telegraph (an outlined, non-damaging indicator locked to the exact
 // angle it'll fire at) gives real warning before it goes live and starts
 // rotating — see updateErifHandHazards for the 'telegraph'/'active' state
@@ -1222,7 +1230,7 @@ const EQUIP_TIME = .35;
 const EMERGE_SPEED = 380, EMERGE_MIN_TIME = .4, EMERGE_MAX_TIME = .9;
 const WANDER_SPEED = 95, WANDER_TURN_RATE = 2.0;
 const WANDER_REPICK_TIME = [1.3, 2.0];
-const SLAM_COOLDOWN = [5, 7.5];
+const SLAM_COOLDOWN = [3, 6];
 const CHASE_SPEED = 260, CHASE_TURN_RATE = 3.0, CHASE_MAX_TIME = 1.1, SLAM_ENGAGE_RANGE = 64;
 const SLAM_TELEGRAPH_TIME = .55;
 const HAND_VULNERABLE_TIME = 2.0;
@@ -1471,7 +1479,7 @@ function fireFingerShot(hand, x, y) {
       spawnErifBounceBall(x, y, s.x, s.y);
     }
   } else {
-    spawnConvergenceCueHazard(ward, { x, y });
+    spawnConvergenceCueHazard(ward, { x, y }, true);
     if (Math.random() < BOUNCE_BALL_CHANCE) spawnErifBounceBall(x, y, s.x, s.y);
   }
 }
@@ -1628,11 +1636,12 @@ function handleErifPunch() {
     tone(300 + battle.erifHeadHitsLanded * 22, .1, 'sine', .05);
     spawnSparks(battle.erifHeadX, battle.erifHeadY, 8, { color: '#fff', speed: [60, 160], life: .35 });
     spawnErifEyeBall(); // one of Erif's own eyes pops out and joins the fight permanently, one per ward lost
-    // Every ward break attempts to fire the mouth laser — but only if one
-    // isn't already telegraphing/rotating (erifBeamPhase truthy skips this
-    // entirely, rewarding a break landed during that danger window rather
-    // than stacking a second beam on top of it).
-    if (!battle.erifBeamPhase) {
+    // The mouth laser is a 2nd-phase mechanic — silent through the first 4
+    // ward breaks, then every break from the 4th onward attempts to fire
+    // one, skipped only if one isn't already telegraphing/rotating
+    // (erifBeamPhase truthy), rewarding a break landed during that danger
+    // window rather than stacking a second beam on top of it.
+    if (!battle.erifBeamPhase && battle.erifWardsDestroyed >= 4) {
       battle.erifBeamDir *= -1; // alternates every real beam (see its init, battle-core.js — starts counter-clockwise)
       battle.erifBeamPhase = 'telegraph';
       battle.erifBeamTimer = ERIF_BEAM_TELEGRAPH_TIME;
@@ -1748,6 +1757,11 @@ function updateErifHandHazards(dt) {
       const a = Math.atan2(s.y - oy, s.x - ox);
       const da = Math.atan2(Math.sin(a - battle.erifBeamAngle), Math.cos(a - battle.erifBeamAngle));
       if (Math.abs(da) <= ERIF_BEAM_HALF_WIDTH && dist(s.x, s.y, ox, oy) <= ERIF_BEAM_REACH) hurt();
+      // A rapid, quiet, repeating low tone rather than one sustained note —
+      // this codebase's tone() is a discrete one-shot, so a fast loop of them
+      // is what stands in for a continuous laser hum.
+      battle.erifBeamToneTimer -= dt;
+      if (battle.erifBeamToneTimer <= 0) { tone(65, .11, 'sawtooth', .022); battle.erifBeamToneTimer = .12; }
     }
   }
 }

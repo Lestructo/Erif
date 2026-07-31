@@ -203,17 +203,17 @@ function setMusic(name) {
     musicFadeMult = 1;
     try {
       const a = ensureErifTheme();
-      // Cut to a fifth of musicVolume (was half, then a quarter — still too
-      // loud each time) — this is a real mastered MP3, while every other
-      // track is a synthesized
-      // oscillator scaled down by tiny gain constants (see tone()/kick()
-      // above), so at the same slider position this one was playing back
-      // noticeably louder than any of the procedural themes.
+      // Cut to .15x musicVolume (was half, then a quarter, then a fifth —
+      // still too loud each time) — this is a real mastered MP3, while every
+      // other track is a synthesized oscillator scaled down by tiny gain
+      // constants (see tone()/kick() above), so at the same slider position
+      // this one was playing back noticeably louder than any of the
+      // procedural themes.
       // Starts .75s in rather than at 0 — the mastered track opens with a
       // stretch of near-silence, which is what actually read as playback
       // lag (preloading it earlier, see startBoss in battle-core.js, didn't
       // touch this since the file itself was already loaded in time).
-      a.volume = musicVolume * .20; a.currentTime = .75;
+      a.volume = musicVolume * .15; a.currentTime = .75;
       a.play().catch(() => {}); // autoplay policies can reject this; harmless if so
     } catch {}
   } else if (name === 'erifTrue') {
@@ -223,7 +223,7 @@ function setMusic(name) {
       // A longer silent lead-in than ensureErifTheme's own track above (2s
       // vs .75s) — a different mastered MP3, opens with more near-silence
       // before the track actually starts, which read as playback lag.
-      a.volume = musicVolume * .20; a.currentTime = 2;
+      a.volume = musicVolume * .15; a.currentTime = 2;
       a.play().catch(() => {});
     } catch {}
   }
@@ -266,11 +266,11 @@ function updateMusic() {
   if (musicMode === 'erif') {
     // Real <audio> element, not the procedural scheduler — just keep its
     // volume live so the music slider still applies while it plays.
-    try { ensureErifTheme().volume = musicVolume * .20 * musicFadeMult; } catch {}
+    try { ensureErifTheme().volume = musicVolume * .15 * musicFadeMult; } catch {}
     return;
   }
   if (musicMode === 'erifTrue') {
-    try { ensureTrueTheme().volume = musicVolume * .20 * musicFadeMult; } catch {}
+    try { ensureTrueTheme().volume = musicVolume * .15 * musicFadeMult; } catch {}
     return;
   }
   const song = MUSIC[musicMode];

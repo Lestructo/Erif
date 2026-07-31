@@ -122,16 +122,21 @@ function draw() {
   else if (drawMode === 'dialogue' || drawMode === 'erifTwist') drawDialogue();
   else if (drawMode === 'battle') {
     // A very short, small-amplitude shake on taking a hit (battle.hitShakeT,
-    // set in hurt(), battle-core.js), plus a second source that ramps in
-    // right alongside either of Erif's hard-timeout black-outs
+    // set in hurt(), battle-core.js), a second source that ramps in right
+    // alongside either of Erif's hard-timeout black-outs
     // (battle.erifReckoningFadeT/erifFightFadeT, 0-1 over their last 5s —
     // see updateErifHandsFinale/updateErif, erif.js) so the screen visibly
-    // rattles apart as it fades, not just goes quietly black. Both wrap only
-    // the arena draw call so the controls legend/volume meters/pause overlay
-    // drawn below stay put.
+    // rattles apart as it fades, not just goes quietly black, and a third,
+    // much smaller constant rumble the whole time the mouth laser is
+    // actually live (battle.erifBeamPhase === 'active', not the telegraph)
+    // so it reads as something physically tearing loose rather than a
+    // silent, weightless rotation. All three wrap only the arena draw call
+    // so the controls legend/volume meters/pause overlay drawn below stay
+    // put.
     const hitShake = battle ? (battle.hitShakeT / .12) * 4 : 0;
     const fadeShake = battle ? Math.max(battle.erifReckoningFadeT, battle.erifFightFadeT) * 9 : 0;
-    const shakeMag = hitShake + fadeShake;
+    const beamShake = battle && battle.erifBeamPhase === 'active' ? 1.5 : 0;
+    const shakeMag = hitShake + fadeShake + beamShake;
     if (shakeMag > 0) {
       ctx.save();
       ctx.translate((Math.random() * 2 - 1) * shakeMag, (Math.random() * 2 - 1) * shakeMag);
