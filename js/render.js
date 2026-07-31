@@ -908,7 +908,7 @@ function flameShrinkDrop(baseScale, hpFrac) {
 }
 // Feeds drawFlame's own wobble a "warped" time instead of real wall-clock
 // time — a persistent accumulator that advances by real elapsed time times
-// a per-cycle random speed (0.75x-1.25x), re-rolled every time the fast
+// a per-cycle random speed (0.25x-1.25x), re-rolled every time the fast
 // wobble term (frequency 9) completes a full cycle. Accumulating instead of
 // resetting the phase each cycle keeps both sine terms perfectly continuous
 // — only the RATE changes at each cycle boundary, never a visible jump.
@@ -918,7 +918,7 @@ function flameWobbleWarpedT(t) {
   flameWobbleAccum += Math.max(0, t - flameWobbleLastT) * flameWobbleMult;
   flameWobbleLastT = t;
   if (flameWobbleAccum >= flameWobbleNextBoundary) {
-    flameWobbleMult = rand(.75, 1.25);
+    flameWobbleMult = rand(.25, 1.25);
     flameWobbleNextBoundary += (Math.PI * 2) / 9;
   }
   return flameWobbleAccum;
@@ -979,15 +979,34 @@ function drawFlame(x, y, scale = 1, hpFrac = 1, invuln = false) {
 // a true circle centered on the candle's base wouldn't actually match it.
 // `dimMult` (0-1) additionally shrinks/dims it further on top of `scale` —
 // only battle's own HP-based guttering ever passes anything but 1.
+// Cycle-timing state for drawSoulGlow's pulse, below — a genuinely random
+// period per cycle (soulGlowCyclePeriod, re-rolled each time the current one
+// finishes) rather than a smoothly-drifting oscillator, so consecutive
+// pulses never fall into a "speeds up for a while" stretch. Module-level
+// since only one candle avatar is ever on screen at a time (title, hub,
+// battle, cutscene are mutually exclusive), same singleton-timer convention
+// as titleEmberTimer/footstepTimer elsewhere.
+let soulGlowCycleStart = null, soulGlowCyclePeriod = rand(2, 6);
 function drawSoulGlow(x, y, scale = 1, dimMult = 1) {
   const t = performance.now() / 1000;
-  // The base rate (.7) is one full pulse every ~9s (2π/.7). A slow secondary
-  // oscillator (~57s cycle) drifts the actual rate between 1x and 1.4x that
-  // — so it's sometimes up to 40% quicker (as fast as a ~6.4s cycle) — for a
-  // less mechanically-constant, more organic flicker instead of one fixed
-  // tempo forever.
-  const pulseSpeedMult = 1 + .4 * (.5 + .5 * Math.sin(t * .11));
-  const pulse = .5 + .5 * Math.sin(t * .7 * pulseSpeedMult);
+  if (soulGlowCycleStart === null) soulGlowCycleStart = t;
+  let cycleElapsed = t - soulGlowCycleStart;
+  if (cycleElapsed >= soulGlowCyclePeriod) {
+    soulGlowCycleStart = t;
+    soulGlowCyclePeriod = rand(2, 6);
+    cycleElapsed = 0;
+  }
+  // Each cycle is one continuous bump — 0 at the start, up to a smooth
+  // peak, back down to 0 right at the cycle's end — with no rest phase, so
+  // it's always in motion; the *next* cycle's rise picks up right where
+  // this one's fall left off (both are 0 at that instant, so there's no
+  // jump, just a brief inflection). Whatever "speeds up for a while, reads
+  // as flashing" the old continuous sine did came from its FREQUENCY
+  // drifting mid-oscillation — that can't happen here, since each cycle's
+  // shape is always exactly one full rise-and-fall; only its total length
+  // (4-8s, randomized above) varies.
+  const cyclePhase = cycleElapsed / soulGlowCyclePeriod;
+  const pulse = Math.sin(Math.PI * cyclePhase);
   const mult = scale * dimMult * .81; // another 10% off on top of the earlier size cut
   const outerR = (18 + pulse * 3) * mult, innerR = (9 + pulse * 2) * mult;
   ctx.save();
