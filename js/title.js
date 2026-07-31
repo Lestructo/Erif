@@ -4,8 +4,11 @@
 // call startBoss/applyDifficultyTier directly, same reasoning as why hub.js
 // already loads after erif.js.
 
-// Hard mode is unlocked from the start — it no longer requires a prior
-// Normal-tier win.
+// HARD is locked behind actually beating Normal (see everBeatNormal below —
+// latched from save.erifWon, set the instant Normal's own ending plays, see
+// erif.js's updateErifVictory; also true after beating Hard, since that
+// path sets it alongside erifTrueWon) unless unlocked early via
+// debugUnlocked below.
 let selectedDifficulty = 'normal';
 // Debug/QA aids — God Mode makes hurt() (battle-core.js) a no-op. Skip to
 // Erif is a toggle rather than its own action now: turn it on, then confirm
@@ -21,38 +24,55 @@ let skipToErifEnabled = false;
 // Reckoning without also skipping to Erif wouldn't make sense — they're
 // really the same shortcut, just one goes further.
 let skipToTrueFinalEnabled = false;
-// God Mode is locked behind actually beating Hard's true ending
-// (save.erifTrueWon) unless the player types "fire" while on the title
-// screen, which unlocks it for the rest of the session — see
-// checkFireCode below and activateTitleItem/drawTitle's handling of the
-// 'god' entry. Skip to ??? shares that same unlock condition (typing "true"
-// instead of "fire") — reaching the Reckoning is exactly the same spoiler
-// as God Mode already gates on, so there's no reason for a separate,
-// earlier bar.
-let fireCodeUnlocked = false;
-let fireCodeBuffer = '';
-function checkFireCode() {
+// Skip to Erif, Skip to ???, and God Mode are all locked behind actually
+// beating Hard's true ending (save.erifTrueWon) unless the player unlocks
+// them early — stand inside the title's own "ERIF" plaque (see
+// titleNameBoxRect/playerInsideTitleNameBox below) and type "fire", which
+// unlocks all three (and HARD itself, in case it somehow isn't already —
+// beating Hard implies beating Normal) for the rest of the session. One
+// shared code instead of the two separate ones ("fire"/"true") this used to
+// have — there was no real reason for God Mode and Skip to ??? to each
+// need their own separate password when they gate on the exact same spoiler.
+let debugUnlocked = false;
+let debugCodeBuffer = '';
+function checkDebugCode() {
   for (const k of ['f', 'i', 'r', 'e']) {
-    if (tap(k)) {
-      fireCodeBuffer = (fireCodeBuffer + k).slice(-4);
-      if (fireCodeBuffer === 'fire' && !fireCodeUnlocked) { fireCodeUnlocked = true; tone(500, .14, 'sine', .05); }
-    }
+    if (tap(k)) debugCodeBuffer = (debugCodeBuffer + k).slice(-4);
+  }
+  // Only checked at the moment the buffer completes "fire" — the player
+  // just needs to be standing in the box for that last keystroke, not
+  // rooted there for all four.
+  if (debugCodeBuffer === 'fire' && !debugUnlocked && playerInsideTitleNameBox()) {
+    debugUnlocked = true;
+    tone(500, .14, 'sine', .05);
   }
 }
-let trueCodeUnlocked = false;
-let trueCodeBuffer = '';
-function checkTrueCode() {
-  for (const k of ['t', 'r', 'u', 'e']) {
-    if (tap(k)) {
-      trueCodeBuffer = (trueCodeBuffer + k).slice(-4);
-      if (trueCodeBuffer === 'true' && !trueCodeUnlocked) { trueCodeUnlocked = true; tone(500, .14, 'sine', .05); }
-    }
-  }
+// Sticky unlock latches — once true, stay true for the rest of the session
+// even across a RESET DATA wipe (which zeroes save.erifWon/erifTrueWon
+// straight back to false, same as everything else in `save`). RESET DATA is
+// meant to let a player start their progress over, not claw back content
+// they've already earned access to this session — latched here (see
+// latchUnlocks, called every title-screen frame from updateTitle) rather
+// than read directly off `save`, so a reset can't silently re-lock these.
+let everBeatNormal = false, everBeatHard = false;
+function latchUnlocks() {
+  if (save.erifWon) everBeatNormal = true;
+  if (save.erifTrueWon) everBeatHard = true;
 }
-function godModeUnlocked() { return save.erifTrueWon || fireCodeUnlocked; }
-function skipToTrueFinalUnlocked() { return save.erifTrueWon || trueCodeUnlocked; }
+function hardModeUnlocked() { return everBeatNormal || debugUnlocked; }
+function skipToErifUnlocked() { return everBeatHard || debugUnlocked; }
+function godModeUnlocked() { return everBeatHard || debugUnlocked; }
+function skipToTrueFinalUnlocked() { return everBeatHard || debugUnlocked; }
 function toggleGodMode() { godMode = !godMode; tone(godMode ? 260 : 140, .08, 'square', .03); }
-function toggleSkipToErif() { skipToErifEnabled = !skipToErifEnabled; tone(skipToErifEnabled ? 260 : 140, .08, 'square', .03); }
+// Locked ON (not just defaulted on) while Skip to ??? is enabled — that
+// toggle already implies this one (see its own comment above), so turning
+// this off underneath it would silently leave Skip to ??? on with Skip to
+// Erif reading OFF, an inconsistent combination that shouldn't be reachable.
+function toggleSkipToErif() {
+  if (skipToTrueFinalEnabled) { tone(90, .08, 'square', .02); return; }
+  skipToErifEnabled = !skipToErifEnabled;
+  tone(skipToErifEnabled ? 260 : 140, .08, 'square', .03);
+}
 function toggleSkipToTrueFinal() {
   skipToTrueFinalEnabled = !skipToTrueFinalEnabled;
   if (skipToTrueFinalEnabled) skipToErifEnabled = true;
@@ -107,7 +127,7 @@ const TITLE_ITEMS = [
   { key: 'skip', label: 'SKIP TO ERIF', type: 'toggle' },
   { key: 'skipTrue', label: 'SKIP TO ???', type: 'toggle' },
   { key: 'god', label: 'GOD MODE', type: 'toggle' },
-  { key: 'reset', label: 'RESET DATA', type: 'action' },
+  { key: 'reset', label: 'RESET DATA (UNLOCKS STAY UNLOCKED)', type: 'action' },
 ];
 let titleMenuIndex = 0;
 // RESET DATA is destructive and can't be undone, so confirming it takes two
@@ -128,6 +148,7 @@ function activateTitleItem(item) {
     // just disabled outright while it's on (see drawTitle's greyed-out
     // label) instead of quietly no-oping.
     if (item.key === 'normal' && skipToTrueFinalEnabled) { tone(90, .08, 'square', .02); return; }
+    if (item.key === 'hard' && !hardModeUnlocked()) { tone(90, .08, 'square', .02); return; } // still locked — a low buzz, not a real confirm
     selectedDifficulty = item.key;
     if (skipToErifEnabled) { skipToErif(); return; }
     applyDifficultyTier(selectedDifficulty);
@@ -146,6 +167,7 @@ function activateTitleItem(item) {
     if (!godModeUnlocked()) { tone(90, .08, 'square', .02); return; } // still locked — a low buzz, not a toggle
     toggleGodMode();
   } else if (item.key === 'skip') {
+    if (!skipToErifUnlocked()) { tone(90, .08, 'square', .02); return; } // still locked — a low buzz, not a toggle
     toggleSkipToErif();
   } else if (item.key === 'skipTrue') {
     if (!skipToTrueFinalUnlocked()) { tone(90, .08, 'square', .02); return; } // still locked — a low buzz, not a toggle
@@ -193,8 +215,8 @@ function updateTitleWander(dt) {
   titleWanderX = clamp(titleWanderX, 24, W - 24); titleWanderY = clamp(titleWanderY, 24, H - 24);
 }
 function updateTitle(dt) {
-  checkFireCode();
-  checkTrueCode();
+  latchUnlocks();
+  checkDebugCode();
   // Lazy-start, same convention updateExplore (hub.js) uses for its own
   // ambient track — guarded so it doesn't re-trigger every frame once
   // already playing.
@@ -247,11 +269,26 @@ const TITLE_CANDLE_Y_SHIFT = -27; // centers the candle+glow between UNYIELDING 
 const TITLE_MENU_Y_SHIFT = -20;
 // Generous fixed-size hit region around each row's centered text — matches
 // drawTitle's own y = H/2 + 86 + i*32 + TITLE_MENU_Y_SHIFT layout below.
-// Wide enough to comfortably cover the longest label ("GOD MODE — ON/OFF")
-// without needing to measure actual rendered text width.
+// Wide enough to comfortably cover the longest label ("RESET DATA (UNLOCKS
+// STAY UNLOCKED)") without needing to measure actual rendered text width.
 function titleItemRect(i) {
   const y = H / 2 + 86 + i * 32 + TITLE_MENU_Y_SHIFT;
-  return { x: W / 2 - 160, y: y - 14, w: 320, h: 28 };
+  return { x: W / 2 - 190, y: y - 14, w: 380, h: 28 };
+}
+// The engraved "ERIF" plaque's own rect (see drawTitle below) — hoisted out
+// here so checkDebugCode's "standing inside the box" test (playerInsideTitleNameBox)
+// uses the exact same rectangle the plaque is actually drawn at, rather than
+// a second guessed copy that could drift out of sync with it.
+function titleNameBoxRect() {
+  ctx.font = '64px "Courier New",monospace';
+  const boxW = ctx.measureText('ERIF').width + 14, boxH = 56;
+  const headerY = H / 2 - 112 + TITLE_HEADER_Y_SHIFT;
+  return { x: W / 2 - boxW / 2, y: headerY - boxH / 2, w: boxW, h: boxH };
+}
+function playerInsideTitleNameBox() {
+  if (titleWanderX === null) return false;
+  const r = titleNameBoxRect();
+  return titleWanderX >= r.x && titleWanderX <= r.x + r.w && titleWanderY >= r.y && titleWanderY <= r.y + r.h;
 }
 // Called from render.js's handleCanvasClick — returns true if the click
 // landed on a menu row (and already activated it), same true/false
@@ -303,9 +340,9 @@ function drawTitle() {
   // constant, so it hugs "ERIF" as tightly as padding allows, and centered
   // exactly on the text's own (textBaseline='middle') anchor point — the
   // box used to carry its own separate vertical offset, which is what
-  // threw its centering off from the letters.
-  ctx.font = '64px "Courier New",monospace';
-  const boxW = ctx.measureText('ERIF').width + 14, boxH = 56, boxX = W / 2 - boxW / 2, boxY = headerY - boxH / 2;
+  // threw its centering off from the letters. Shared with checkDebugCode's
+  // own hit-test via titleNameBoxRect (above) rather than a second copy.
+  const { x: boxX, y: boxY, w: boxW, h: boxH } = titleNameBoxRect();
   ctx.save();
   // A very faint pulsing fill behind the letters — just enough to read as a
   // little light pooled inside the frame, not a solid panel.
@@ -376,9 +413,13 @@ function drawTitle() {
     const y = H / 2 + 86 + i * 32 + TITLE_MENU_Y_SHIFT;
     const active = titleMenuIndex === i;
     let label = it.label;
-    if (it.key === 'god') label = godModeUnlocked() ? `${it.label} — ${godMode ? 'ON' : 'OFF'}` : `${it.label} — LOCKED`;
-    else if (it.key === 'skip') label = `${it.label} — ${skipToErifEnabled ? 'ON' : 'OFF'}`;
-    else if (it.key === 'skipTrue') label = skipToTrueFinalUnlocked() ? `${it.label} — ${skipToTrueFinalEnabled ? 'ON' : 'OFF'}` : `${it.label} — LOCKED`;
+    if (it.key === 'god') label = godModeUnlocked() ? `${it.label} — ${godMode ? 'ON' : 'OFF'}` : `${it.label} — LOCKED (BEAT HARD)`;
+    // FORCED ON while Skip to ??? is on (see toggleSkipToErif) — that toggle
+    // already implies this one, so it reads as locked-on rather than a
+    // normal independently-toggleable ON.
+    else if (it.key === 'skip') label = !skipToErifUnlocked() ? `${it.label} — LOCKED (BEAT HARD)` : skipToTrueFinalEnabled ? `${it.label} — FORCED ON` : `${it.label} — ${skipToErifEnabled ? 'ON' : 'OFF'}`;
+    else if (it.key === 'skipTrue') label = skipToTrueFinalUnlocked() ? `${it.label} — ${skipToTrueFinalEnabled ? 'ON' : 'OFF'}` : `${it.label} — LOCKED (BEAT HARD)`;
+    else if (it.key === 'hard' && !hardModeUnlocked()) label = `${it.label} — LOCKED (BEAT NORMAL)`;
     else if (it.key === 'normal' && skipToTrueFinalEnabled) label = `${it.label} — DISABLED`;
     else if (it.key === 'reset' && resetArmed) label = 'PRESS AGAIN TO ERASE ALL DATA';
     // Greyed out well below the usual unfocused .55 — Skip to ??? forces

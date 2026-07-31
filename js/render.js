@@ -2550,7 +2550,14 @@ function drawTrueEnding() {
   const t = messageTimer;
   text('ERIF', W / 2, 210, 50, 'center', clamp(t / 1.2, 0, 1));
   text('UNYIELDING FLAME', W / 2, 262, 20, 'center', clamp((t - .3) / 1.2, 0, 1));
-  text('THE SOURCE HAS NOTHING LEFT TO BURN.', W / 2, 370, 20, 'center', clamp((t - 1) / 1.2, 0, 1));
+  // Types on instead of fading in as one block (see updateTrueEndingReveal,
+  // erif.js) — left-aligned from a fixed x computed off the FULL string's
+  // width rather than center-aligning the growing slice, so the line stays
+  // anchored in place as it types instead of visibly re-centering itself
+  // wider with every new character.
+  ctx.font = '20px "Courier New",monospace';
+  const trueEndingLineX = W / 2 - ctx.measureText(TRUE_ENDING_LINE).width / 2;
+  text(TRUE_ENDING_LINE.slice(0, Math.floor(trueEndingRevealCount)), trueEndingLineX, 370, 20, 'left');
   text('ESC — RETURN TO MAIN MENU', W / 2, 470, 14, 'center', .65);
 }
 
@@ -2650,6 +2657,7 @@ function handleVolumeMeterClick(mx, my) {
 }
 function handleCanvasClick(mx, my) {
   if (typeof handleTitleMenuClick === 'function' && handleTitleMenuClick(mx, my)) return;
+  if (typeof handleUpgradeChoiceClick === 'function' && handleUpgradeChoiceClick(mx, my)) return;
   handleVolumeMeterClick(mx, my);
 }
 

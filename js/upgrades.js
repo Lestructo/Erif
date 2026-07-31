@@ -18,6 +18,46 @@ let upgradeChoiceOptions = [], upgradeChoiceIndex = 0, upgradeChoiceType = null;
 // grow/shrink instead of a hard cut.
 let upgradeChoiceCardScale = [];
 
+// Shared layout constants — both drawUpgradeChoice and the click hit-test
+// (upgradeCardRect below) need the exact same numbers, so they're hoisted
+// here rather than redeclared as locals in just the draw function.
+const UPGRADE_CARD_W = 211, UPGRADE_CARD_GAP = 50, UPGRADE_CARD_H = 246, UPGRADE_CARD_Y = 190;
+function upgradeCardRect(i, n) {
+  const totalW = n * UPGRADE_CARD_W + Math.max(0, n - 1) * UPGRADE_CARD_GAP;
+  const startX = W / 2 - totalW / 2;
+  return { x: startX + i * (UPGRADE_CARD_W + UPGRADE_CARD_GAP), y: UPGRADE_CARD_Y, w: UPGRADE_CARD_W, h: UPGRADE_CARD_H };
+}
+// Click a card to select it — same effect as arrows/AD/JL, not an instant
+// confirm, so a stray click can't lock in an upgrade the way pressing Space
+// still deliberately requires. Called from render.js's handleCanvasClick,
+// same true/false dispatch contract handleTitleMenuClick/handleVolumeMeterClick use.
+function handleUpgradeChoiceClick(mx, my) {
+  if (mode !== 'upgradeChoice') return false;
+  const n = upgradeChoiceOptions.length;
+  for (let i = 0; i < n; i++) {
+    const r = upgradeCardRect(i, n);
+    if (mx < r.x || mx > r.x + r.w || my < r.y || my > r.y + r.h) continue;
+    upgradeChoiceIndex = i;
+    tone(220, .04, 'square', .025);
+    return true;
+  }
+  return false;
+}
+// Scroll wheel also moves the selection, same convention as the title
+// screen's own wheel listener (moveTitleSelection, title.js) — same 100ms
+// cooldown so a single physical scroll notch doesn't skip several cards.
+let lastUpgradeChoiceWheelT = 0;
+addEventListener('wheel', e => {
+  if (mode !== 'upgradeChoice') return;
+  const now = performance.now();
+  if (now - lastUpgradeChoiceWheelT < 100) return;
+  lastUpgradeChoiceWheelT = now;
+  const n = upgradeChoiceOptions.length;
+  if (n === 0) return;
+  upgradeChoiceIndex = (upgradeChoiceIndex + (e.deltaY > 0 ? 1 : -1) + n) % n;
+  tone(220, .04, 'square', .025);
+});
+
 // Called from closeResult() — `type` is the boss just beaten, kept around so
 // confirming a pick can still run the exact same hub-return closeResult()
 // would have done for a normal win (see returnToHubAfterWin, battle-core.js).
@@ -47,6 +87,13 @@ function confirmUpgradeChoice() {
   // upgrade choice back to back before actually starting the fight — chain
   // into the next one instead of the normal hub-return.
   if (skipToErifQueue) { advanceSkipToErifUpgrades(); return; }
+  // Respec Upgrades (title.js) walks through a whole re-earned batch the
+  // same way — `!== null` rather than truthiness so the last pick (which
+  // counts respecPicksRemaining down to exactly 0) still routes back
+  // through advanceRespecUpgrades to close out the chain, instead of
+  // falling into the normal single-pick hub-return below (there's no real
+  // boss/hub to return to here — upgradeChoiceType is null for a respec).
+  if (respecPicksRemaining !== null) { advanceRespecUpgrades(); return; }
   mode = 'explore';
   returnToHubAfterWin(upgradeChoiceType);
   battle = null; fade = 1;
@@ -55,8 +102,8 @@ function confirmUpgradeChoice() {
 function updateUpgradeChoice(dt) {
   const n = upgradeChoiceOptions.length;
   if (n === 0) { confirmUpgradeChoice(); return; } // defensive — startUpgradeChoice only ever runs with >=1 option
-  if (tap('arrowleft') || tap('a') || tap('j')) upgradeChoiceIndex = (upgradeChoiceIndex - 1 + n) % n;
-  if (tap('arrowright') || tap('d') || tap('l')) upgradeChoiceIndex = (upgradeChoiceIndex + 1) % n;
+  if (tap('arrowleft') || tap('a') || tap('j')) { upgradeChoiceIndex = (upgradeChoiceIndex - 1 + n) % n; tone(220, .04, 'square', .025); }
+  if (tap('arrowright') || tap('d') || tap('l')) { upgradeChoiceIndex = (upgradeChoiceIndex + 1) % n; tone(220, .04, 'square', .025); }
   if (tap(' ')) confirmUpgradeChoice();
   for (let i = 0; i < n; i++) {
     const target = i === upgradeChoiceIndex ? 1.1 : 1;
@@ -94,9 +141,10 @@ function drawUpgradeChoice() {
   // ~12% smaller than the original 240x280 (was tuned down to 20% smaller,
   // then back up 10% from there) — sized so the hover-grow animation below
   // (upgradeChoiceCardScale) can push a selected card up past its resting
-  // size without ever feeling cramped or crowding its neighbors.
-  const n = upgradeChoiceOptions.length, cardW = 211, gap = 50, cardH = 246;
-  const totalW = n * cardW + Math.max(0, n - 1) * gap, startX = W / 2 - totalW / 2, y = 190;
+  // size without ever feeling cramped or crowding its neighbors. See
+  // UPGRADE_CARD_W etc. above — shared with upgradeCardRect's click hit-test.
+  const n = upgradeChoiceOptions.length, cardW = UPGRADE_CARD_W, gap = UPGRADE_CARD_GAP, cardH = UPGRADE_CARD_H;
+  const totalW = n * cardW + Math.max(0, n - 1) * gap, startX = W / 2 - totalW / 2, y = UPGRADE_CARD_Y;
   upgradeChoiceOptions.forEach((key, i) => {
     const cat = UPGRADE_CATALOG[key], selected = i === upgradeChoiceIndex;
     // text() always sets its own explicit alpha (and resets to 1 after) —
@@ -143,9 +191,4 @@ function drawUpgradeChoice() {
 
     ctx.restore();
   });
-
-  // Sits well above drawControlsLegend's own always-on row (y1=H-21) — this
-  // screen's card-select input isn't covered by that generic legend, but
-  // the two shouldn't crowd each other.
-  text('ARROWS/AD/JL — SELECT     SPACE — CONFIRM', W / 2, H - 58, 11, 'center', .5);
 }

@@ -35,6 +35,7 @@ function togglePause() {
     if (musicMode === 'erifTrue') { try { ensureTrueTheme().play().catch(() => {}); } catch {} }
     tone(180, .05, 'square', .03);
     pauseReturnArmed = false; // resuming cancels any pending "press again to return" confirm
+    respecArmed = false; // same — resuming cancels a pending "press again to respec" too
   } else if (PAUSABLE_MODES.includes(mode)) {
     prePauseMode = mode; mode = 'paused';
     if (musicMode === 'erif') { try { ensureErifTheme().pause(); } catch {} }
@@ -54,11 +55,63 @@ function returnToMainMenuFromPause() {
 // screen's own reset-save-data button uses (resetArmed, title.js) — a
 // single accidental press used to instantly discard the run in progress.
 let pauseReturnArmed = false;
+// Same two-press convention, bound to R — only offered while paused from
+// the hub (prePauseMode === 'explore'), never mid-battle: respeccing
+// abandons whatever's in `battle` without cleaning it up, and the
+// upgrade-choice screens it walks through (see advanceRespecUpgrades below)
+// assume there's no fight in progress underneath them, same as how they're
+// normally only ever reached right after a real fight actually ends.
+let respecArmed = false;
 function updatePaused(dt) {
   if (tap(' ')) {
     if (!pauseReturnArmed) { pauseReturnArmed = true; tone(160, .1, 'sawtooth', .04); }
     else returnToMainMenuFromPause();
   }
+  if (prePauseMode === 'explore' && tap('r')) {
+    if (!respecArmed) { respecArmed = true; tone(160, .1, 'sawtooth', .04); }
+    else { respecArmed = false; respecUpgrades(); tone(90, .3, 'sawtooth', .06); }
+  }
+}
+// Non-null (including 0) while working through a post-respec batch of
+// re-picks — mirrors title.js's skipToErifQueue chaining convention, just a
+// plain countdown instead of a per-lieutenant list, since a respec pick
+// isn't tied to any specific lieutenant. confirmUpgradeChoice (upgrades.js)
+// checks `!== null` (not truthiness) so the very last pick, which counts
+// respecPicksRemaining down to exactly 0, still routes back through
+// advanceRespecUpgrades to close out the chain instead of falling into the
+// normal single-pick hub-return.
+let respecPicksRemaining = null;
+function advanceRespecUpgrades() {
+  if (respecPicksRemaining > 0 && availableUpgradeTypes().length > 0) {
+    respecPicksRemaining--;
+    startUpgradeChoice(null); // not tied to any boss — see confirmUpgradeChoice's respec branch
+    return;
+  }
+  respecPicksRemaining = null;
+  mode = 'explore';
+}
+// Resets save.upgrades/hpProgress to 0 and hands the player back the exact
+// same number of picks as a fresh batch of upgrade-choice screens, so they
+// can redistribute the identical total across the 4 types instead of
+// however it landed the first time. No new save field needed — the total
+// spent is fully derivable from the existing stacks (upgrades.hp costs
+// UPGRADE_CATALOG.hp.costPerStack picks per realized stack, not 1, hence
+// the *costPerStack term; hpProgress banks whatever's been paid toward the
+// next stack that hasn't hit costPerStack yet). Deliberately leaves
+// ward/perfected/attempts/erifWon/etc. completely untouched — this is not
+// RESET DATA, just "undo my upgrade picks." Room/player position aren't
+// touched — the player's already mid-hub when this triggers (see
+// respecArmed above), so they land back exactly where they paused instead
+// of getting teleported to the center room.
+function respecUpgrades() {
+  const total = save.upgrades.speed + save.upgrades.shield + save.upgrades.iframe
+    + save.upgrades.hp * UPGRADE_CATALOG.hp.costPerStack + save.hpProgress;
+  save.upgrades = { speed: 0, hp: 0, shield: 0, iframe: 0 };
+  save.hpProgress = 0;
+  saveGame();
+  prePauseMode = null;
+  respecPicksRemaining = total;
+  advanceRespecUpgrades();
 }
 function drawPauseOverlay() {
   ctx.save();
@@ -68,6 +121,12 @@ function drawPauseOverlay() {
   text('ESC — RESUME', W / 2, H / 2 + 20, 16);
   if (pauseReturnArmed) { ctx.fillStyle = EMBER; text('SPACE AGAIN — RETURN TO MAIN MENU', W / 2, H / 2 + 50, 16); ctx.fillStyle = '#fff'; }
   else text('SPACE — RETURN TO MAIN MENU', W / 2, H / 2 + 50, 16);
+  // Only offered while paused from the hub — see updatePaused's own
+  // prePauseMode === 'explore' gate.
+  if (prePauseMode === 'explore') {
+    if (respecArmed) { ctx.fillStyle = EMBER; text('R AGAIN — RESPEC UPGRADES', W / 2, H / 2 + 80, 16); ctx.fillStyle = '#fff'; }
+    else text('R — RESPEC UPGRADES', W / 2, H / 2 + 80, 16);
+  }
   ctx.restore();
 }
 
@@ -117,7 +176,7 @@ function update(dt) {
   else if (mode === 'result' && tap(' ')) closeResult();
   else if (mode === 'upgradeChoice') updateUpgradeChoice(dt);
   else if (mode === 'ending') messageTimer += dt;
-  else if (mode === 'trueEnding') messageTimer += dt;
+  else if (mode === 'trueEnding') updateTrueEndingReveal(dt);
   fade = Math.max(0, fade - dt * 2.5);
 }
 

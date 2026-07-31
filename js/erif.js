@@ -2154,8 +2154,32 @@ function updateErifTrueVictory(dt) {
       stopMusic();
       mode = 'trueEnding';
       messageTimer = 0;
+      trueEndingRevealCount = 0;
+      // The screen itself used to be completely silent going in — a soft,
+      // slightly dissonant two-note descent (fitting "nothing left to
+      // burn" better than a triumphant fanfare would) instead of nothing.
+      tone(196, .5, 'sine', .05);
+      tone(147, .7, 'sine', .045, ensureAudioCtx().currentTime + .35);
     }
   }
+}
+
+// The true ending's payoff line types on like every other dialogue in the
+// game (see updateDialogueReveal above) — this screen predates the shared
+// dialogue object system and never got the same reveal treatment, so it
+// used to just fade in as one solid block with no sound at all.
+const TRUE_ENDING_LINE = 'THE SOURCE HAS NOTHING LEFT TO BURN.';
+const TRUE_ENDING_REVEAL_START = 1; // matches this line's old fade-in start (see drawTrueEnding, render.js)
+function updateTrueEndingReveal(dt) {
+  messageTimer += dt;
+  const cur = trueEndingRevealCount, len = TRUE_ENDING_LINE.length;
+  if (cur >= len) return;
+  const elapsed = messageTimer - TRUE_ENDING_REVEAL_START;
+  if (elapsed <= 0) return;
+  const next = Math.min(len, elapsed * DIALOGUE_CHARS_PER_SEC);
+  // Same soft typing tick updateDialogueReveal uses for every other line.
+  if (Math.floor(next / 3) > Math.floor(cur / 3)) tone(200 + rand(-15, 15), .025, 'square', .011);
+  trueEndingRevealCount = next;
 }
 
 // A hard cap on the whole Erif fight (every phase up through Enraged/the

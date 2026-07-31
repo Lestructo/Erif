@@ -289,6 +289,10 @@ let fade = 0;
 let message = '';
 let messageSub = '';
 let messageTimer = 0;
+// Typed-reveal progress for drawTrueEnding's payoff line (see
+// updateTrueEndingReveal, erif.js) — reset alongside messageTimer whenever
+// mode flips to 'trueEnding'.
+let trueEndingRevealCount = 0;
 let battle = null;
 let dialogue = null;
 
