@@ -28,7 +28,7 @@ function spawnSandGrain(hard = false) {
   // making a bigger, more deliberate telegraph out of.
   const slowMult = battle.sandPhase === 'slow' ? 3 : 1;
   // 20% further out (12 -> 14.4) — no telegraph before it's live.
-  battle.sandGrains.push({ x, y: b.y - 14.4, vy: speed, r: rand(6, 18) * slowMult });
+  battle.sandGrains.push({ x, y: b.y - 14.4, vy: speed, r: rand(6, 18) * slowMult, ...hazardAgeFields(15) });
   tone(320, .04, 'square', .015);
 }
 function updateSandGrains(dt) {
@@ -40,7 +40,12 @@ function updateSandGrains(dt) {
     // player) — a miss used to just silently vanish a little further down.
     else if (!g.puffed && g.y >= b.y + b.h) { g.puffed = true; spawnSparks(g.x, b.y + b.h, 3, { color: EMBER, speed: [20, 50], life: .25 }); noiseHit(.05, .006, 2600, null, 'sfx'); }
   }
-  battle.sandGrains = battle.sandGrains.filter(g => !g.dead && g.y < b.y + b.h + 40);
+  // naturalNormalSeconds sized off the SLOW sand phase specifically (its own
+  // deliberately slow-motion, bigger-telegraph grains — see spawnSandGrain's
+  // slowMult comment), not the fast phase — a value tuned to the fast
+  // phase's much shorter natural fall time would cut the slow phase's
+  // intentional drama short instead of just decluttering the fast phase.
+  battle.sandGrains = battle.sandGrains.filter(g => !g.dead && g.y < b.y + b.h + 40 && !hazardExpired(g.ageExpireT));
 }
 // A small hourglass, cast loose and drifting on its own wandering path — no
 // wall of origin to read, no straight line to anticipate, just something to
@@ -67,7 +72,7 @@ function spawnHourglassOrb(hard = false) {
   // more deliberate telegraph" idea spawnSandGrain's own slowMult already
   // uses, just off the new smaller base.
   const slowMult = battle.sandPhase === 'slow' ? 1.5 : 1;
-  battle.hourglassOrbs.push({ x, y, r: 15 * slowMult, heading, turnRate: rand(-1.1, 1.1), speed, spin: rand(0, Math.PI * 2), age: 0 });
+  battle.hourglassOrbs.push({ x, y, r: 15 * slowMult, heading, turnRate: rand(-1.1, 1.1), speed, spin: rand(0, Math.PI * 2), age: 0, ...hazardAgeFields(20) });
   tone(180, .1, 'triangle', .02);
 }
 function updateHourglassOrbs(dt) {
@@ -123,7 +128,10 @@ function updateHourglassOrbs(dt) {
     o.y += Math.sin(o.heading) * o.speed * moveTs * dt;
     if (dist(o.x, o.y, s.x, s.y) < s.r + o.r - 2) { o.dead = true; hurt(); }
   }
-  battle.hourglassOrbs = battle.hourglassOrbs.filter(o => !o.dead &&
+  // 20 matches the existing totalAge>=20 forceOut threshold above (already
+  // this hazard's own "nothing should linger forever" ceiling) — Normal
+  // gets the usual 25% cut off that (15s), Hard is untouched.
+  battle.hourglassOrbs = battle.hourglassOrbs.filter(o => !o.dead && !hazardExpired(o.ageExpireT) &&
     o.x > b.x - 60 && o.x < b.x + b.w + 60 && o.y > b.y - 60 && o.y < b.y + b.h + 60);
 }
 // No spears, no shield — the Hourglass leans entirely on position dodging
@@ -179,14 +187,18 @@ function updateHourglass(dt, hard = false) {
 // just battle.t again there, unchanged.
 // The cycle length itself also now matches whatever this Verdict instance's
 // own total run actually is: 7s for the standalone trial (unchanged), but
-// 10s for Erif's Reprise segment (see its own 10s window, erif.js) — at the
-// old fixed 7s, a 10s segment would run normal(3.5s) -> burst(3.5s) ->
-// normal again for a stray 3s before getting cut off, instead of one clean
-// normal-then-burst split. Matching the cycle to the segment length means
-// exactly one clean transition, halfway through, every time.
+// Erif's Reprise segment reads its own dynamically-computed window
+// (battle.repriseVerdictDuration, set the instant the segment begins — see
+// erif.js's REPRISE_TARGET_DURATION catch-up) instead of a flat number, so
+// that segment's own length can vary run to run to land the whole Reprise on
+// target. At a mismatched fixed cycle, a longer segment would run
+// normal -> burst -> normal again for a stray tail before getting cut off,
+// instead of one clean normal-then-burst split. Matching the cycle to
+// whatever the segment's real length actually is keeps that one clean
+// transition, halfway through, every time regardless of how long it runs.
 function verdictPhaseProgress(hard = false) {
   if (!hard) return battle.t / battle.duration;
-  const cycle = battle.type === 'erif' ? 10 : 7;
+  const cycle = battle.type === 'erif' ? (battle.repriseVerdictDuration ?? 10) : 7;
   return ((battle.t - battle.phaseStartT) % cycle) / cycle;
 }
 // Verdict was landing as the easiest trial in the roster, so every knob
@@ -247,18 +259,22 @@ function beginVerdictSpiral(hard = false) {
   battle.rings = [];
   battle.ringArcDirection = choose([-1, 1]);
   battle.ringSwitchTimer = hard ? rand(2.2, 3.2) : rand(3.2, 4.6);
-  // Spawns the very first burst ring right now, much closer in (180 instead
-  // of the usual full 360) rather than leaving it to the normal per-frame
-  // cadence check below (which would spawn it a frame later at the usual
-  // full radius) — that combination (the last normal ring already closed in
-  // or gone, the first burst ring still all the way out at 360) is what
-  // read as a dead "waiting" gap right at the transition. Later burst rings
-  // spawn at the usual full radius via the normal cadence.
-  spawnVerdictContinuousRing(hard, 180);
+  // The very first burst ring used to spawn alone at a much closer radius
+  // (180, pulled in from the usual full 360) to avoid a dead "waiting" gap
+  // right at the transition — but that just moved the gap a beat later: one
+  // near ring popped in, shrank away fast, and then every ring after it was
+  // back to spawning all the way out at 360 with nothing in between. Now
+  // spawnVerdictContinuousRing itself ramps the first RING_ENTRY_RAMP_COUNT
+  // rings' spawn radius from that same close-in 180 up to the full 360 (see
+  // battle.ringArcRingCount below), so the spiral corridor actually fills in
+  // smoothly instead of jumping from one lone near ring straight to far ones.
+  battle.ringArcRingCount = 0;
+  spawnVerdictContinuousRing(hard);
   battle.spawn = hard ? .10 : .13; // this phase's normal opening cadence (phase=0), so the next ring lands on schedule
   tone(hard ? 235 : 210, .10, 'triangle', .035);
 }
-function spawnVerdictContinuousRing(hard = false, startRadius = 360) {
+const RING_ENTRY_RAMP_COUNT = 6; // how many burst rings it takes to ramp from the close-in entry radius up to the usual full one
+function spawnVerdictContinuousRing(hard = false) {
   const phase = clamp((verdictPhaseProgress(hard) - .5) / .5, 0, 1);
   if (battle.ringGapA == null) battle.ringGapA = rand(0, Math.PI * 2);
   // Normal's own numbers nudged a step tighter (was .10-.135/.035/175/.5) —
@@ -267,6 +283,9 @@ function spawnVerdictContinuousRing(hard = false, startRadius = 360) {
   const step = lerp(hard ? .125 : .11, hard ? .16 : .145, phase);
   battle.ringGapA += battle.ringArcDirection * step;
   const tinyWobble = Math.sin(battle.t * (hard ? 2.3 : 1.8)) * .012;
+  const rampT = clamp((battle.ringArcRingCount || 0) / RING_ENTRY_RAMP_COUNT, 0, 1);
+  const startRadius = lerp(180, 360, rampT);
+  battle.ringArcRingCount = (battle.ringArcRingCount || 0) + 1;
   spawnRing(hard, battle.ringGapA + tinyWobble, startRadius, battle.ringArcDirection * (hard ? .05 : .04), hard ? 205 : 188, hard ? .37 : .44);
 }
 // moveFn lets a caller swap in moveSoulWithShield instead of the standalone
@@ -348,7 +367,7 @@ function spawnGaleFlag(hard = false) {
   else { x = b.x + b.w + 31.2; y = rand(b.y + 20, b.y + b.h - 20); }
   const speed = (hard ? 76 : 58) * DIFFICULTY.projectileMult;
   const a = Math.atan2(battle.soul.y - y, battle.soul.x - x);
-  battle.galeFlags.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, speed, r: 9, wave: rand(0, Math.PI * 2) });
+  battle.galeFlags.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, speed, r: 9, wave: rand(0, Math.PI * 2), ...hazardAgeFields(20) });
   tone(230, .09, 'triangle', .025);
 }
 function updateGaleFlags(dt) {
@@ -368,7 +387,11 @@ function updateGaleFlags(dt) {
       if (d < blockRadius) { f.dead = true; tone(480, .05, 'square', .022); spawnSparks(f.x, f.y, Math.round(4 + f.r * .3), { color: EMBER, speed: [40, 90], life: .3 }); }
     } else if (d < hitRadius) { f.dead = true; hurt(); }
   }
-  battle.galeFlags = battle.galeFlags.filter(f => !f.dead &&
+  // 28 is a generous ceiling (homing + a curving wave means there's no
+  // closed-form travel time) sized off Enraged's own bigger 680-wide box, so
+  // it stays safely above any realistic crossing time in the smaller
+  // standard box too.
+  battle.galeFlags = battle.galeFlags.filter(f => !f.dead && !hazardExpired(f.ageExpireT) &&
     f.x > b.x - 70 && f.x < b.x + b.w + 70 && f.y > b.y - 70 && f.y < b.y + b.h + 70);
 }
 // Rows of wind lines sweeping in together from the current wind's source
@@ -410,7 +433,7 @@ function spawnWindRow(hard = false, dirOverride = null, allowExtra = true, small
   const warnT = (hard ? .5 : .75) * DIFFICULTY.telegraphMult;
   for (let i = 1; i <= count; i++) {
     battle.windLines.push({
-      dir, pos: spacing * i, t: warnT, maxT: warnT, fired: false, travel: 0, speed,
+      dir, pos: spacing * i, t: warnT, maxT: warnT, fired: false, travel: 0, speed, ageExpireT: Infinity, ageShrinkWindow: 0,
       // A wave, not a straight spear reskin — each line weaves side to side
       // as it crosses, with its own phase/amplitude so a whole row doesn't
       // wiggle in perfect unison.
@@ -480,7 +503,7 @@ function updateWindLines(dt) {
     if (!w.fired) {
       w.t -= dt;
       if (w.t > 0) continue;
-      w.fired = true; // falls through so it also gets a position + hit-test this same frame
+      w.fired = true; Object.assign(w, hazardAgeFields(10)); // falls through so it also gets a position + hit-test this same frame
     }
     w.travel += w.speed * dt;
     const p = windLineXY(w, b);
@@ -502,8 +525,12 @@ function updateWindLines(dt) {
       if (d < blockRadius) { w.dead = true; tone(480, .05, 'square', .022); spawnSparks(hx, hy, 4, { color: EMBER, speed: [40, 90], life: .25 }); }
     } else if (d < hitRadius) { w.dead = true; hurt(); }
   }
+  // 10 sized off the biggest arena a wind row can appear in (the Reckoning's
+  // 910-wide box), measured from when it actually fires (the pre-fire
+  // telegraph wait isn't a lingering-clutter concern, only the post-fire
+  // travel is).
   battle.windLines = battle.windLines.filter(w => !w.dead &&
-    (!w.fired || (w.x > b.x - 90 && w.x < b.x + b.w + 90 && w.y > b.y - 90 && w.y < b.y + b.h + 90)));
+    (!w.fired || (!hazardExpired(w.ageExpireT) && w.x > b.x - 90 && w.x < b.x + b.w + 90 && w.y > b.y - 90 && w.y < b.y + b.h + 90)));
 }
 function beginGaleGust(hard) {
   battle.galeWindDir = choose(['up', 'down', 'left', 'right']);
@@ -549,7 +576,7 @@ function endGaleGust(hard) {
   battle.galeGustPhase = null;
   battle.controlsInverted = false;
   battle.windVX = 0; battle.windVY = 0;
-  battle.galeGustCooldown = hard ? rand(2, 3) : rand(3, 4);
+  battle.galeGustCooldown = hard ? rand(1.5, 2.5) : rand(2.5, 4);
 }
 function updateGale(dt, hard = false) {
   moveSoulWithShield(dt, hard ? 205 : 190);
@@ -786,11 +813,11 @@ function updateOracle(dt, hard = false) {
     const b = battle.box;
     const x = rand(b.x + 10, b.x + b.w - 10);
     // 20% further out (8 -> 9.6) — no telegraph before it's live.
-    battle.bullets.push({ x, y: b.y - 9.6, vx: (hard ? rand(-55, 55) : rand(-18, 18)) * DIFFICULTY.projectileMult, vy: (hard ? 275 : 215) * DIFFICULTY.projectileMult, r: 5 });
+    battle.bullets.push({ x, y: b.y - 9.6, vx: (hard ? rand(-55, 55) : rand(-18, 18)) * DIFFICULTY.projectileMult, vy: (hard ? 275 : 215) * DIFFICULTY.projectileMult, r: 5, ...hazardAgeFields(3) });
     battle.spawn = hard ? .19 : .31;
   }
   for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (circleHit(p, p.r)) hurt(); }
-  battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20);
+  battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20 && !hazardExpired(p.ageExpireT));
 }
 
 // ---- THE ARCHIVIST — Memory. Simon-Says sigil sequence. ----
@@ -819,7 +846,13 @@ const MEMORY_MATCH_ROUND_TIME = 10;
 // deriving it from battle.echoRound — used by Erif's Reprise segment (see
 // updateRepriseArchivist, erif.js), which runs its own fixed 4-then-6 pair
 // rather than the standalone trial's ever-climbing progression.
-function startEchoRound(hard = false, lengthOverride = null) {
+// roundTimeOverride lets a caller give this one round a bigger safety cap
+// than MEMORY_MATCH_ROUND_TIME's shared default — used by Enraged's own
+// memory segments (see battle.enrageMemoryCap, erif.js) so a careful,
+// slower-but-successful player there naturally supplies more of Enraged's
+// own pacing budget itself, rather than that slack always landing on the
+// math bursts around it. Every other caller is unaffected.
+function startEchoRound(hard = false, lengthOverride = null, roundTimeOverride = null) {
   // Always the full 5-symbol set now, matching Erif's own Reprise segment
   // (which always runs startEchoRound with hard=true regardless of the
   // actual difficulty tier) — one more option than Normal used to get here.
@@ -837,7 +870,7 @@ function startEchoRound(hard = false, lengthOverride = null) {
   battle.echoRevealIndex = 0;
   battle.echoTouchHold = 0;
   battle.echoAwaitingExit = false;
-  battle.echoRoundTimer = MEMORY_MATCH_ROUND_TIME;
+  battle.echoRoundTimer = roundTimeOverride ?? MEMORY_MATCH_ROUND_TIME;
 }
 function updateEchoReveal(dt, hard) {
   if (updateEchoRoundTimeout(dt)) return;
@@ -924,7 +957,7 @@ function spawnEchoBook(hard = false) {
   else { x = b.x - 19.2; y = rand(b.y, b.y + b.h); tx = b.x + b.w + 19.2; ty = rand(b.y, b.y + b.h); }
   const speed = (hard ? 68 : 52) * DIFFICULTY.projectileMult;
   const a = Math.atan2(ty - y, tx - x);
-  battle.echoBooks.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: 6, wobble: rand(0, Math.PI * 2), spin: rand(-3, 3), trailT: 0 });
+  battle.echoBooks.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: 6, wobble: rand(0, Math.PI * 2), spin: rand(-3, 3), trailT: 0, ...hazardAgeFields(20) });
   tone(160, .12, 'sine', .02);
 }
 function updateEchoBooks(dt) {
@@ -940,7 +973,7 @@ function updateEchoBooks(dt) {
     }
     if (dist(w.x, w.y, battle.soul.x, battle.soul.y) < battle.soul.r + w.r - 3) { w.dead = true; hurt(); }
   }
-  battle.echoBooks = battle.echoBooks.filter(w => !w.dead &&
+  battle.echoBooks = battle.echoBooks.filter(w => !w.dead && !hazardExpired(w.ageExpireT) &&
     w.x > battle.box.x - 40 && w.x < battle.box.x + battle.box.w + 40 &&
     w.y > battle.box.y - 40 && w.y < battle.box.y + battle.box.h + 40);
   for (const p of battle.echoBookTrail) { p.t -= dt; p.x += p.vx * dt; p.y += p.vy * dt; }
@@ -968,7 +1001,7 @@ function spawnWeavingBook(hard = false, family = null) {
   battle.weavingBooks.push({
     ox, oy, dirA, speed, travel: 0, r: 5.5,
     wavePhase: rand(0, Math.PI * 2), waveAmp: rand(26, 40),
-    spin: rand(-3, 3), rot: 0, trailT: 0, family,
+    spin: rand(-3, 3), rot: 0, trailT: 0, family, ...hazardAgeFields(20),
   });
   tone(170, .1, 'sine', .024);
 }
@@ -993,7 +1026,12 @@ function updateWeavingBooks(dt) {
     }
     if (dist(p.x, p.y, s.x, s.y) < s.r + w.r - 3) { w.dead = true; hurt(); }
   }
-  battle.weavingBooks = battle.weavingBooks.filter(w => !w.dead &&
+  // Tightened to 20 (was 32, sized off Enraged's own bigger 680x390 box —
+  // this hazard also appears there and via Convergence's archivist cue, not
+  // just the standalone fight's default box) for more decluttering; the
+  // gradual shrink over its last 50% means it fades rather than pops even in
+  // that bigger arena if it's cut a little short of a full natural crossing.
+  battle.weavingBooks = battle.weavingBooks.filter(w => !w.dead && !hazardExpired(w.ageExpireT) &&
     w.x > b.x - 90 && w.x < b.x + b.w + 90 && w.y > b.y - 90 && w.y < b.y + b.h + 90);
 }
 function updateTrailSquares(dt) {
@@ -1083,27 +1121,30 @@ function launchMaskSpear(t) {
   // not up/down/left/right, and would silently make every mirrored spear
   // unblockable.)
   const trueSide = battle.maskMirrored ? SHIELD_OPPOSITE[t.side] : t.side;
-  battle.spears.push({ x, y, vx, vy, side: trueSide, r: 8, family: t.family, kind: 'shard', lying: battle.maskMirrored });
+  battle.spears.push({ x, y, vx, vy, side: trueSide, r: 8, family: t.family, kind: 'shard', lying: battle.maskMirrored, ...hazardAgeFields(5.0) });
   tone(260, .025, 'square', .018);
 }
 // A slow drifting shard of the mask itself, floating in from a box edge
 // toward the center rather than launching like a spear — no wall, no sudden
-// telegraph line, just something to notice, track, and be ready to block by
-// the time it closes in. Runs on its own independent timer alongside the
-// spear cadence, giving Mask a second, quieter kind of pressure instead of
-// leaning entirely on spear volume for difficulty.
+// telegraph line, just something to notice, track, and dodge by the time it
+// closes in. Unblockable by the shield (unlike a launched spear/spear-shard,
+// this one never had a wall to telegraph which side it'd land on, so it's
+// meant to be read and moved around, not faced down) — runs on its own
+// independent timer alongside the spear cadence, giving Mask a second,
+// quieter kind of pressure instead of leaning entirely on spear volume for
+// difficulty.
 function spawnMaskShard(hard = false) {
   const b = battle.box, edge = (Math.random() * 4) | 0;
   // 20% further out (24 -> 28.8) — no telegraph before it's live.
-  let x, y, side;
-  if (edge === 0) { x = rand(b.x + 20, b.x + b.w - 20); y = b.y - 28.8; side = 'up'; }
-  else if (edge === 1) { x = b.x + b.w + 28.8; y = rand(b.y + 20, b.y + b.h - 20); side = 'right'; }
-  else if (edge === 2) { x = rand(b.x + 20, b.x + b.w - 20); y = b.y + b.h + 28.8; side = 'down'; }
-  else { x = b.x - 28.8; y = rand(b.y + 20, b.y + b.h - 20); side = 'left'; }
+  let x, y;
+  if (edge === 0) { x = rand(b.x + 20, b.x + b.w - 20); y = b.y - 28.8; }
+  else if (edge === 1) { x = b.x + b.w + 28.8; y = rand(b.y + 20, b.y + b.h - 20); }
+  else if (edge === 2) { x = rand(b.x + 20, b.x + b.w - 20); y = b.y + b.h + 28.8; }
+  else { x = b.x - 28.8; y = rand(b.y + 20, b.y + b.h - 20); }
   const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
   const a = Math.atan2(cy - y, cx - x);
   const speed = (hard ? 48 : 38) * DIFFICULTY.projectileMult;
-  battle.maskShards.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, side, r: 10, wobble: rand(0, Math.PI * 2) });
+  battle.maskShards.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: 10, wobble: rand(0, Math.PI * 2), ...hazardAgeFields(20) });
   tone(210, .1, 'triangle', .02);
 }
 function updateMaskShards(dt) {
@@ -1113,12 +1154,11 @@ function updateMaskShards(dt) {
     w.x += w.vx * dt + Math.cos(w.wobble) * 9 * dt;
     w.y += w.vy * dt + Math.sin(w.wobble) * 9 * dt;
     const hitRadius = s.r + w.r - 2, d = dist(w.x, w.y, s.x, s.y);
-    if (shieldFacingBlocks(w.x, w.y, w.side)) {
-      const blockRadius = hitRadius + UPGRADE_CATALOG.shield.perStack * (save.upgrades.shield || 0);
-      if (d < blockRadius) { w.dead = true; tone(480, .05, 'square', .022); spawnSparks(w.x, w.y, Math.round(4 + w.r * .3), { color: EMBER, speed: [40, 90], life: .3 }); }
-    } else if (d < hitRadius) { w.dead = true; hurt(); }
+    if (d < hitRadius) { w.dead = true; hurt(); }
   }
-  battle.maskShards = battle.maskShards.filter(w => !w.dead &&
+  // 20 still comfortably covers a straight edge-through-center-and-out-the-
+  // far-side path, even in Enraged's bigger box.
+  battle.maskShards = battle.maskShards.filter(w => !w.dead && !hazardExpired(w.ageExpireT) &&
     w.x > b.x - 60 && w.x < b.x + b.w + 60 && w.y > b.y - 60 && w.y < b.y + b.h + 60);
 }
 function updateMask(dt, hard = false) {

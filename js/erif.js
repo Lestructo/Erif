@@ -40,6 +40,16 @@ const DIALOGUE_CHARS_PER_SEC = 42;
 // Space like every other dialogue (including the one leading into the
 // fight itself, which is untouched).
 const DIALOGUE_AUTO_HOLD = 0.6;
+// How long the Enraged-entry dialogue (see startErifEnrageDialogue) takes to
+// play at its own base pace with zero stretch — the floor on how long that
+// interstitial can ever take, since it never speeds up past this and never
+// skips. Computed once here (instead of inline in startErifEnrageDialogue)
+// so REPRISE_TARGET_DURATION below can also read it — the Reprise needs to
+// land its own completion this many seconds *before* the dialogue's actual
+// target end point, not exactly on it, or the dialogue's own unavoidable
+// floor duration would always push Enraged's real start past that target.
+const ERIF_ENRAGE_DIALOGUE_NATURAL_DURATION = ERIF_ENRAGE_DIALOGUE.reduce(
+  (sum, line) => sum + line.length / (DIALOGUE_CHARS_PER_SEC * 3) + DIALOGUE_AUTO_HOLD, 0);
 function updateDialogueReveal(dt) {
   if (!dialogue) return;
   const len = dialogue.lines[dialogue.index].length;
@@ -106,6 +116,10 @@ function approachErif() {
 // REPRISE_ORDER.length rather than hardcoded.
 const REPRISE_ORDER = ['hourglass', 'executioner', 'mask', 'witness', 'archivist', 'oracle', 'gale', 'verdict'];
 const REPRISE_SEGMENT = 7;
+// REPRISE_TARGET_DURATION (how long the whole Reprise should take) is
+// defined down near ERIF_FIGHT_TIME_LIMIT, since it's derived from that
+// constant plus the Enraged dialogue's own natural floor duration — see it
+// there for the full explanation.
 // Phase numbers after the Reprise, derived from REPRISE_ORDER.length so they
 // can never silently collide with the Reprise segment indices (which run
 // 0..REPRISE_ORDER.length-1) the way hand-picked literals would if the
@@ -246,11 +260,11 @@ function updateRepriseOracle(dt) {
   if (battle.spawn <= 0) {
     const b = battle.box;
     const x = rand(b.x + 10, b.x + b.w - 10);
-    battle.bullets.push({ x, y: b.y - 9.6, vx: rand(-55, 55) * DIFFICULTY.projectileMult, vy: 275 * DIFFICULTY.projectileMult, r: 5 });
+    battle.bullets.push({ x, y: b.y - 9.6, vx: rand(-55, 55) * DIFFICULTY.projectileMult, vy: 275 * DIFFICULTY.projectileMult, r: 5, ...hazardAgeFields(3) });
     battle.spawn = .19;
   }
   for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (circleHit(p, p.r)) hurt(); }
-  battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20);
+  battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20 && !hazardExpired(p.ageExpireT));
 }
 
 // Segment transitions within the Reprise no longer despawn in-flight
@@ -278,7 +292,9 @@ function updateCarriedRepriseHazards(dt, active) {
   if (active !== 'gale') { updateGaleFlags(dt); updateWindLines(dt); }
   if (active !== 'oracle') {
     for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (circleHit(p, p.r)) hurt(); }
-    battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20);
+    // Same bullets, same 2.18 as Reprise-Oracle's own spawn above — this is
+    // just the carry-over tick for when a later segment is active.
+    battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20 && !hazardExpired(p.ageExpireT));
   }
 }
 
@@ -378,7 +394,7 @@ function spawnConvergenceAimedBullet() {
   else if (edge === 2) { x = rand(b.x, b.x + b.w); y = b.y + b.h + 16.8; }
   else { x = b.x - 16.8; y = rand(b.y, b.y + b.h); }
   const a = Math.atan2(s.y - y, s.x - x) + rand(-.13, .13), speed = 160 * DIFFICULTY.projectileMult;
-  battle.aimedBullets.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: 4 });
+  battle.aimedBullets.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: 4, ...hazardAgeFields(10) });
 }
 function spawnConvergenceSpears(family, hard = false, forcedSide = null, extraDelay = 0) {
   const before = battle.telegraphs.length;
@@ -569,16 +585,16 @@ function updateConvergence(dt) {
   if (battle.inkTimer > 0) {
     battle.inkTimer -= dt; battle.inkSpawn -= dt;
     if (battle.inkSpawn <= 0) {
-      battle.bullets.push({ x: rand(battle.box.x + 10, battle.box.x + battle.box.w - 10), y: battle.box.y - 9.6, vx: rand(-45, 45) * DIFFICULTY.projectileMult, vy: 235 * DIFFICULTY.projectileMult, r: 5 });
+      battle.bullets.push({ x: rand(battle.box.x + 10, battle.box.x + battle.box.w - 10), y: battle.box.y - 9.6, vx: rand(-45, 45) * DIFFICULTY.projectileMult, vy: 235 * DIFFICULTY.projectileMult, r: 5, ...hazardAgeFields(3) });
       battle.inkSpawn = .17;
     }
   }
 
   updateConvergenceMarks(dt);
   for (const p of battle.aimedBullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, p.r)) hurt(); }
-  battle.aimedBullets = battle.aimedBullets.filter(p => p.x > battle.box.x - 40 && p.x < battle.box.x + battle.box.w + 40 && p.y > battle.box.y - 40 && p.y < battle.box.y + battle.box.h + 40);
+  battle.aimedBullets = battle.aimedBullets.filter(p => !hazardExpired(p.ageExpireT) && p.x > battle.box.x - 40 && p.x < battle.box.x + battle.box.w + 40 && p.y > battle.box.y - 40 && p.y < battle.box.y + battle.box.h + 40);
   for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, p.r)) hurt(); }
-  battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20);
+  battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20 && !hazardExpired(p.ageExpireT));
   updateRingHazards(dt); updateSpearHazards(dt, true); updateShapeHazards(dt, true);
   // Hourglass/Gale cues (see spawnConvergenceCueHazard above) spawn real
   // orbs/flags/wind rows now instead of borrowed spears — these need their
@@ -601,16 +617,19 @@ function startErifEnrageDialogue() {
   // input, so there's no reason to make it linger at the normal typing
   // pace by default. But it also keeps battle.t advancing the whole time
   // now (see main.js), so its own length affects exactly when the
-  // Enraged theme actually starts — slowed down (never sped up) from that
-  // base pace as needed so it finishes right as the whole-fight timer
-  // (ERIF_FIGHT_TIME_LIMIT) hits 80s remaining, lining the music up to a
-  // consistent moment instead of wherever the player happened to finish
-  // Convergence. If it would already naturally run past that point, it
-  // just plays at the normal triple-speed pace.
+  // Enraged theme actually starts — slowed down OR sped up from that base
+  // pace as needed so it finishes (not just begins) right as the whole-
+  // fight timer (ERIF_FIGHT_TIME_LIMIT) hits 75s remaining, lining the
+  // music up to a consistent moment instead of wherever the player happened
+  // to finish Convergence. REPRISE_TARGET_DURATION already aims the Reprise
+  // to land early enough that this never needs to speed up in the typical
+  // case — this is the last-resort correction for whatever residual drift
+  // still gets through (a slightly-off Verdict catch-up, frame-timing
+  // slop...), floored at 2x the base pace (never faster) so a genuinely bad
+  // overshoot reads as brisk rather than an unreadable flash of text.
   const baseCps = DIALOGUE_CHARS_PER_SEC * 3;
-  const naturalDuration = ERIF_ENRAGE_DIALOGUE.reduce((sum, line) => sum + line.length / baseCps + DIALOGUE_AUTO_HOLD, 0);
-  const targetDuration = Math.max(0, (ERIF_FIGHT_TIME_LIMIT - 80) - battle.t);
-  const slowFactor = targetDuration > naturalDuration ? targetDuration / naturalDuration : 1;
+  const targetDuration = Math.max(0, (ERIF_FIGHT_TIME_LIMIT - 75) - battle.t);
+  const slowFactor = Math.max(.5, targetDuration / ERIF_ENRAGE_DIALOGUE_NATURAL_DURATION);
   dialogue = {
     lines: ERIF_ENRAGE_DIALOGUE, index: 0, after: 'erifEnraged', context: 'battle',
     charsPerSec: baseCps / slowFactor, holdTime: DIALOGUE_AUTO_HOLD * slowFactor,
@@ -677,18 +696,38 @@ const ERIF_ENRAGE_MINIGAME_PLAN = [
 // the next segment. Returns true the instant the whole plan is complete,
 // having already kicked off Final Convergence — callers should bail out for
 // the frame when this happens.
-// A fast, skilled clear of the two memory rounds especially could finish
-// the whole plan well under Enraged's own typical ~50s pace, dropping the
-// player into Final Convergence far earlier than intended (and well before
-// the Enraged dialogue's own 80s-remaining music sync had anything to line
-// up against). ENRAGE_MIN_DURATION floors how early that transition can
-// actually fire — enforced by stretching the plan's remaining math
-// questions (see their own qMax math below) rather than inserting extra
-// bonus rounds after the fact. Dropped from 40 — that was catching even
-// ordinary, non-blitzed play (typical pace apparently runs under 40 on its
-// own) and over-stretching questions that didn't need it; this is meant to
-// only kick in for a genuinely fast clear.
-const ENRAGE_MIN_DURATION = 25;
+// Enraged targets handing off to Final Convergence with this many seconds
+// left on the *whole fight's* clock (ERIF_FIGHT_TIME_LIMIT) — framed the
+// same way the Convergence->Enraged dialogue sync already is (remaining
+// time against the fight clock, not a self-contained elapsed-since-phase-
+// start figure). A fixed internal-duration target (what this used to be)
+// let any drift from an earlier phase — a dialogue that overshot, a rough
+// Archivist retry — silently eat into how long Enraged itself then actually
+// had left, with nothing correcting for it; this stays correct regardless
+// of exactly when Enraged's own start turns out to land. See
+// beginErifEnraged, which computes battle.enrageBudget off this the instant
+// the phase actually begins, and battle.enrageMemoryCap/
+// battle.enrageMathBurstCap, scaled off that same real budget rather than
+// fixed numbers sized for some assumed-typical case.
+const ENTER_FINAL_CONVERGENCE_REMAINING = 44;
+// Floor on battle.enrageBudget itself, for the degenerate case where Enraged
+// somehow already begins at or past the target (an upstream phase running
+// very late) — keeps the schedule below from collapsing to zero/negative
+// checkpoints across the board.
+const ENRAGE_MIN_BUDGET = 15;
+// Cumulative "fraction of the budget expected to have elapsed by the end of
+// this segment" schedule, one per ERIF_ENRAGE_MINIGAME_PLAN entry — hand-
+// split so memory's own two rounds carry most of the budget on their own
+// natural pace, with math kept to short bursts around them. Multiplied by
+// battle.enrageBudget (not a fixed total) when sizing a math question, so it
+// scales with whatever Enraged's real available time actually turns out to
+// be. Each question's catch-up is scoped to just the gap up to its own
+// checkpoint rather than the whole remaining budget in one shot, so an
+// early burst never has to swallow everything at once — except the last
+// question, whose checkpoint equals the full budget, left uncapped (see
+// battle.enrageMathBurstCap) so it still guarantees a precise final landing
+// regardless of how everything before it actually played out.
+const ERIF_ENRAGE_CHECKPOINT_FRACTIONS = [.09, .37, .48, .84, 1];
 function advanceEnrageSegment() {
   battle.enrageSegmentIndex++;
   if (battle.enrageSegmentIndex >= ERIF_ENRAGE_MINIGAME_PLAN.length) { startErifFinalConvergence(); return true; }
@@ -743,6 +782,15 @@ function beginErifEnraged() {
   battle.boxGrowTo = { ...ERIF_ENRAGE_BOX };
   battle.boxGrowT = 0;
   battle.soul.x = W / 2; battle.soul.y = 384; battle.soul.vx = 0; battle.soul.vy = 0;
+  // Computed once, right here, off whatever battle.t actually is the
+  // instant Enraged begins — see ENTER_FINAL_CONVERGENCE_REMAINING above.
+  // enrageMemoryCap/enrageMathBurstCap are scaled off this same real budget
+  // (roughly matching each's own share of ERIF_ENRAGE_CHECKPOINT_FRACTIONS)
+  // rather than fixed numbers, so a budget that ends up smaller or bigger
+  // than typical doesn't leave either one sized for the wrong total.
+  battle.enrageBudget = Math.max(ENRAGE_MIN_BUDGET, (ERIF_FIGHT_TIME_LIMIT - ENTER_FINAL_CONVERGENCE_REMAINING) - battle.t);
+  battle.enrageMemoryCap = clamp(battle.enrageBudget * .4, 8, 20);
+  battle.enrageMathBurstCap = clamp(battle.enrageBudget * .3, 5, 12);
   mode = 'battle';
   tone(38, .55, 'sawtooth', .075);
 }
@@ -790,17 +838,22 @@ function updateEnraged(dt) {
     // this ring-passage count needs to track whatever the active quiz
     // actually has, here and in the laser spawn below.
     const answerPassages = battle.q ? battle.q.a.length : 1;
-    // Shrink speed halved (was 112) — the chaos phase's ring was closing
-    // in noticeably faster than Verdict's own version of the same hazard.
-    // Per-gap opening widened (.34 -> .42) — with several answer lanes
-    // (gapCount up to 5) plus multiple overlapping rings shrinking at once,
-    // the tighter gap made it too easy to get squeezed with nowhere safe to
-    // stand; this stays closer to Verdict's own standalone opening size
-    // (.36-.52) so it never reads as unfair. Ensure Enraged always leaves
-    // at least two passage gaps so the player has multiple lanes to choose.
+    // Explicit per-tier px/s (25 normal / 40 hard) instead of a single base
+    // speed run through DIFFICULTY.projectileMult — that ratio (.5/.75, i.e.
+    // 2:3) doesn't land on these particular numbers (5:8), so the desired
+    // absolute speed is pre-divided by projectileMult here, letting
+    // spawnRing's own multiplication cancel back out to exactly 25/40.
+    // Per-gap opening widened (.34 -> .42 -> .5) — with
+    // several answer lanes (gapCount up to 5) plus multiple overlapping rings
+    // shrinking at once, the tighter gap made it too easy to get squeezed
+    // with nowhere safe to stand; this stays closer to Verdict's own
+    // standalone opening size (.36-.52) so it never reads as unfair. Ensure
+    // Enraged always leaves at least two passage gaps so the player has
+    // multiple lanes to choose.
     const enrageGapCount = Math.max(answerPassages, 2);
-    spawnRing(true, battle.ringGapA, 365, battle.ringArcDirection * .04, 56, answerPassages <= 1 ? 1.0 : .42, enrageGapCount);
-    battle.enrageRingTimer = 1.956; // +20% on top (was 1.63, itself +25% from 1.30) — more radial spacing between rings
+    const enrageRingSpeed = (difficultyTier === 'normal' ? 25 : 40) / DIFFICULTY.projectileMult;
+    spawnRing(true, battle.ringGapA, 365, battle.ringArcDirection * .04, enrageRingSpeed, answerPassages <= 1 ? 1.0 : .5, enrageGapCount);
+    battle.enrageRingTimer = 2.5;
   }
   battle.enrageVolleyTimer -= dt;
   if (battle.enrageVolleyTimer <= 0) {
@@ -824,19 +877,17 @@ function updateEnraged(dt) {
         battle.qOptionCountOverride = enrageSeg ? enrageSeg.value : null;
         battle.q = generateOracleQuestion(true);
         battle.qOptionCountOverride = null;
-        // ENRAGE_MIN_DURATION floors how early Enraged can hand off to
-        // Final Convergence (see advanceEnrageSegment) — if a fast/skilled
-        // clear (the memory rounds especially) is running ahead of that
-        // pace, this spreads the needed catch-up evenly across whichever
-        // math questions are still left in the plan, recomputed fresh each
-        // time, rather than dumping the whole difference on the last one.
-        let mathLeft = 0;
-        for (let i = battle.enrageSegmentIndex; i < ERIF_ENRAGE_MINIGAME_PLAN.length; i++) {
-          if (ERIF_ENRAGE_MINIGAME_PLAN[i].type === 'math') mathLeft++;
-        }
-        const remaining = Math.max(0, ENRAGE_MIN_DURATION - (battle.t - battle.phaseStartT));
-        const share = mathLeft > 0 ? remaining / mathLeft : 0;
-        battle.qMax = Math.max(3.15, share - .6); // -.6 leaves room for this question's own laser tail + gap after
+        // Catch-up scoped to just this question's own checkpoint (see
+        // ERIF_ENRAGE_CHECKPOINT_FRACTIONS) rather than the whole remaining
+        // budget — capped at battle.enrageMathBurstCap for every question
+        // except the last, whose checkpoint equals the full
+        // battle.enrageBudget and is left uncapped so it still guarantees a
+        // precise final landing regardless of how everything before it
+        // actually played out.
+        const isLastMath = battle.enrageSegmentIndex === ERIF_ENRAGE_MINIGAME_PLAN.length - 1;
+        const checkpoint = ERIF_ENRAGE_CHECKPOINT_FRACTIONS[battle.enrageSegmentIndex] * battle.enrageBudget;
+        const rawQMax = checkpoint - (battle.t - battle.phaseStartT) - .6; // -.6 leaves room for this question's own laser tail + gap after
+        battle.qMax = isLastMath ? Math.max(3.15, rawQMax) : clamp(rawQMax, 3.15, battle.enrageMathBurstCap);
         battle.qTimer = battle.qMax; battle.lasers = [];
         tone(335, .10, 'triangle', .035);
       }
@@ -860,7 +911,7 @@ function updateEnraged(dt) {
     // Archivist's other quick-match gates use (see updateArchivistQuickMatch),
     // inlined here since Enraged counts rounds against its own segment plan
     // instead of a {round, successes, done} cfg object.
-    if (!battle.sigils.length) startEchoRound(true, enrageSeg.value);
+    if (!battle.sigils.length) startEchoRound(true, enrageSeg.value, battle.enrageMemoryCap);
     if (battle.echoPhase === 'reveal') updateEchoReveal(dt, true);
     else if (battle.echoPhase === 'input') updateEchoInput(dt);
     else if (battle.echoPhase === 'resolve') {
@@ -1009,15 +1060,15 @@ function updateFinalConvergence(dt) {
   if (battle.inkTimer > 0) {
     battle.inkTimer -= dt; battle.inkSpawn -= dt;
     if (battle.inkSpawn <= 0) {
-      battle.bullets.push({ x: rand(battle.box.x + 10, battle.box.x + battle.box.w - 10), y: battle.box.y - 9.6, vx: rand(-40, 40) * DIFFICULTY.projectileMult, vy: 225 * DIFFICULTY.projectileMult, r: 5 });
+      battle.bullets.push({ x: rand(battle.box.x + 10, battle.box.x + battle.box.w - 10), y: battle.box.y - 9.6, vx: rand(-40, 40) * DIFFICULTY.projectileMult, vy: 225 * DIFFICULTY.projectileMult, r: 5, ...hazardAgeFields(5) });
       battle.inkSpawn = .14; // was .19 — denser now that inkTimer itself also runs longer (see spawnConvergenceCueHazard's oracle branch)
     }
   }
   updateConvergenceMarks(dt);
   for (const p of battle.aimedBullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, p.r)) hurt(); }
-  battle.aimedBullets = battle.aimedBullets.filter(p => p.x > battle.box.x - 40 && p.x < battle.box.x + battle.box.w + 40 && p.y > battle.box.y - 40 && p.y < battle.box.y + battle.box.h + 40);
+  battle.aimedBullets = battle.aimedBullets.filter(p => !hazardExpired(p.ageExpireT) && p.x > battle.box.x - 40 && p.x < battle.box.x + battle.box.w + 40 && p.y > battle.box.y - 40 && p.y < battle.box.y + battle.box.h + 40);
   for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, p.r)) hurt(); }
-  battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20);
+  battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20 && !hazardExpired(p.ageExpireT));
   updateRingHazards(dt); updateSpearHazards(dt, true); updateShapeHazards(dt, true);
   // Hourglass/Gale cues now spawn real sand/orbs/flags/wind rows (see
   // spawnConvergenceCueHazard) — need their own update loops run.
@@ -1036,10 +1087,11 @@ function beginErifVictory() {
   battle.convergenceCue = null;
   // Winning in the whole-fight timer's own last 5s (see ERIF_FIGHT_TIME_LIMIT,
   // updateErif) leaves musicFadeMult already partway faded and
-  // erifFightFadeT already partway to a full white-out — without resetting
-  // both here, this victory's own fade-in picks up from wherever that left
-  // off instead of a clean, full-volume start, reading as the music/white
-  // flash briefly fighting itself right as the win lands.
+  // erifFightFadeT already partway to a full black-out — without resetting
+  // both here, this victory's own white fade-in would pick up from wherever
+  // that left off instead of a clean, full-volume start, reading as the
+  // music briefly fighting itself and the screen flickering from black
+  // toward white right as the win lands.
   musicFadeMult = 1;
   battle.erifFightFadeT = 0;
   mode = 'erifVictory';
@@ -1123,8 +1175,8 @@ function startErifReckoningIntro() {
 // and resumes on its own; each hand's cycle runs fully independently of the
 // other. Erif's head HP equals the ward count (8), so the fight ends the
 // instant the 8th hand ever breaks, straight into the existing
-// beginErifTrueVictory/true-ending flow. A hard 100s clock white-fades the
-// whole fight out if it runs long. ----
+// beginErifTrueVictory/true-ending flow. A hard 100s clock black-fades the
+// whole fight out (a loss) if it runs long. ----
 // h trimmed from 580 — unlike Enraged/Final Convergence, this phase keeps
 // the HP row/timer/controls legend on-screen (see hideBottomUI, main.js) on
 // purpose, so the bottom edge is raised enough to leave that whole strip
@@ -1338,6 +1390,8 @@ function updateErifBounceBalls(dt) {
       spawnSparks(ball.x, ball.y, 5, { color: '#fff', speed: [40, 90], life: .25 });
       tone(300, .05, 'square', .02);
     }
+    // No Normal-mode linger cap here — the Reckoning (the only place bounce
+    // balls ever spawn) is Hard-only, so the cap could never actually fire.
     if (ball.bounces >= 2) {
       ball.dead = true;
       spawnSparks(ball.x, ball.y, 10, { color: EMBER, speed: [80, 160], life: .4 });
@@ -1629,12 +1683,12 @@ function updateErifHandHazards(dt) {
   if (battle.inkTimer > 0) {
     battle.inkTimer -= dt; battle.inkSpawn -= dt;
     if (battle.inkSpawn <= 0) {
-      battle.bullets.push({ x: rand(battle.box.x + 10, battle.box.x + battle.box.w - 10), y: battle.box.y - 9.6, vx: rand(-45, 45) * DIFFICULTY.projectileMult, vy: 235 * DIFFICULTY.projectileMult, r: 5 });
+      battle.bullets.push({ x: rand(battle.box.x + 10, battle.box.x + battle.box.w - 10), y: battle.box.y - 9.6, vx: rand(-45, 45) * DIFFICULTY.projectileMult, vy: 235 * DIFFICULTY.projectileMult, r: 5, ...hazardAgeFields(5) });
       battle.inkSpawn = .17;
     }
   }
   for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, p.r)) hurt(); }
-  battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20);
+  battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20 && !hazardExpired(p.ageExpireT));
 }
 
 function beginErifTrueFinal() {
@@ -1703,13 +1757,13 @@ function updateErifHandsFinale(dt) {
 
   updateErifHandHazards(dt);
 
-  // Hard 100s time limit — the last 5s fade the whole fight to white, and
+  // Hard 100s time limit — the last 5s fade the whole fight to black, and
   // running the clock all the way out is a loss. Unlike hurt(), this always
   // applies, God Mode included — the clock is a hard fight constraint, not
   // ordinary damage, so debug invulnerability doesn't cover it.
   const remaining = RECKONING_TIME_LIMIT - (battle.t - battle.phaseStartT);
   battle.erifReckoningFadeT = remaining > RECKONING_FADE_WINDOW ? 0 : clamp(1 - remaining / RECKONING_FADE_WINDOW, 0, 1);
-  // Fades the theme out alongside the white-out/shake instead of leaving it
+  // Fades the theme out alongside the black-out/shake instead of leaving it
   // at full volume right up to the abrupt stopMusic() finishBattle(false)
   // below fires — same treatment the whole-fight timer above uses.
   if (remaining <= RECKONING_FADE_WINDOW) musicFadeMult = clamp(remaining / RECKONING_FADE_WINDOW, 0, 1);
@@ -1764,7 +1818,23 @@ function updateErifTrueVictory(dt) {
 // RECKONING_TIME_LIMIT), same white-fade/shake/music-fade/loss treatment as
 // that one. Replaces the old soft battle.duration auto-win fallback (see
 // updateBattle, battle-core.js) with a real hard loss for Erif specifically.
-const ERIF_FIGHT_TIME_LIMIT = 145, ERIF_FIGHT_FADE_WINDOW = 5;
+const ERIF_FIGHT_TIME_LIMIT = 140, ERIF_FIGHT_FADE_WINDOW = 5; // 5s shorter than it used to be, to line up the end-of-fight music cue
+// How long the whole Reprise (all 8 segments) should take, landing its
+// completion (see REPRISE_ORDER's own advance logic below) this many
+// seconds after fight start. Deliberately ERIF_FIGHT_TIME_LIMIT minus BOTH
+// the Enraged dialogue's 75s-remaining sync target AND that dialogue's own
+// natural floor duration — not just the 75s point itself — so that in the
+// typical case the dialogue doesn't have to stretch OR speed up at all; its
+// own charsPerSec/holdTime adjustment (see startErifEnrageDialogue) is only
+// meant as the last-resort correction for whatever residual drift still
+// gets through, not the primary mechanism. Every Reprise segment is either
+// a flat fixed window or bounded by its own internal round timeout except
+// the Archivist (a genuine pass/retry quick-match, see
+// updateRepriseArchivist) — its variance is what actually drifts the
+// Reprise's total off this target, and Verdict (always the last segment) is
+// the one lever that corrects for it, see its own
+// battle.repriseVerdictDuration catch-up below.
+const REPRISE_TARGET_DURATION = (ERIF_FIGHT_TIME_LIMIT - 75) - ERIF_ENRAGE_DIALOGUE_NATURAL_DURATION;
 function updateErif(dt) {
   if (battle.phase === PHASE_LAST_WAGER) { updateErifHandsFinale(dt); return; }
   const fightRemaining = ERIF_FIGHT_TIME_LIMIT - battle.t;
@@ -1793,10 +1863,10 @@ function updateErif(dt) {
     // updateRepriseArchivist/updateRepriseOracle/updateRepriseHourglass
     // above). Executioner and Mask get their own shorter fixed window
     // (4.5s) instead of the default — the whole Reprise is meant to move
-    // fast. Gale gets its own longer window (7s). Verdict gets its own
-    // longer window too (10s) — its normal/burst cycle (see
-    // verdictPhaseProgress, bosses.js) needs real room to actually show
-    // both halves.
+    // fast. Gale gets its own longer window (7s). Verdict's own window is
+    // computed dynamically (battle.repriseVerdictDuration, set the instant
+    // this segment begins below) rather than a flat number — see
+    // REPRISE_TARGET_DURATION.
     const segmentDone =
       name === 'archivist' ? battle.repriseArchivistDone :
       name === 'oracle' ? battle.repriseOracleDone :
@@ -1805,7 +1875,7 @@ function updateErif(dt) {
       battle.repriseSegElapsed >= (
         name === 'executioner' || name === 'mask' ? 4.25 :
         name === 'gale' ? 7 :
-        name === 'verdict' ? 10 :
+        name === 'verdict' ? (battle.repriseVerdictDuration ?? 10) :
         REPRISE_SEGMENT
       );
     if (segmentDone) {
@@ -1824,6 +1894,20 @@ function updateErif(dt) {
         bumpErifPhase(next, true); battle.spawn = .15;
         battle.soul.vx = 0; battle.soul.vy = 0;
         tone(130 + next * 30, .12, 'sawtooth', .04);
+        // Verdict (always the last Reprise segment) is the one elastic
+        // lever left to land the whole Reprise at REPRISE_TARGET_DURATION —
+        // every other segment is either a flat fixed window or bounded by
+        // its own internal round timeout, so by the time Verdict begins,
+        // whatever drift built up (mainly the Archivist's own variable
+        // pass/retry time) is already fully known and gets corrected here
+        // in one place instead of nowhere. Clamped so it can never collapse
+        // below enough room to show its own normal/burst split (see
+        // verdictPhaseProgress, bosses.js, which reads this same duration
+        // for its cycle length) or balloon absurdly on an unusually fast
+        // clear.
+        if (REPRISE_ORDER[next] === 'verdict') {
+          battle.repriseVerdictDuration = clamp(REPRISE_TARGET_DURATION - battle.t, 6, 20);
+        }
       }
       return;
     }

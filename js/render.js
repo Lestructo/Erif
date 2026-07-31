@@ -1136,7 +1136,8 @@ function drawBattle() {
     line(p.x, p.y, p.x - Math.cos(ang) * trailLen, p.y - Math.sin(ang) * trailLen, isShard ? 2 : 3);
     ctx.restore();
 
-    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(ang);
+    const shrinkS = hazardShrinkScale(p.ageExpireT, p.ageShrinkWindow);
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(ang); ctx.scale(shrinkS, shrinkS);
     if (isShard) {
       ctx.strokeStyle = p.lying ? EMBER : '#fff';
       ctx.lineWidth = 2;
@@ -1153,9 +1154,10 @@ function drawBattle() {
   }
   for (const w of battle.maskShards) {
     // A drifting fragment of the mask, distinct from a launched spear shard —
-    // hollow diamond core with a slow-pulsing outer ring, always honest about
-    // which side blocks it (the lie lives in the spear telegraphs, not here).
-    ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(w.wobble);
+    // hollow diamond core with a slow-pulsing outer ring, unblockable by the
+    // shield (see updateMaskShards, bosses.js), so it reads purely as a dodge.
+    const shrinkS = hazardShrinkScale(w.ageExpireT, w.ageShrinkWindow);
+    ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(w.wobble); ctx.scale(shrinkS, shrinkS);
     ctx.globalAlpha = .85; ctx.strokeStyle = EMBER; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(0, -9); ctx.lineTo(7, 0); ctx.lineTo(0, 9); ctx.lineTo(-7, 0); ctx.closePath(); ctx.stroke();
     ctx.globalAlpha = .3 + .15 * Math.sin(performance.now() / 160);
@@ -1167,8 +1169,9 @@ function drawBattle() {
     // A single falling grain of sand — dodged by position, not the shield,
     // so it's deliberately plain: a small ember with a faint trail above it
     // showing where it fell from, nothing to read beyond "don't stand here."
-    ctx.save(); ctx.globalAlpha = .9; ctx.fillStyle = EMBER;
-    ctx.beginPath(); ctx.arc(g.x, g.y, g.r * .55, 0, Math.PI * 2); ctx.fill();
+    const shrinkS = hazardShrinkScale(g.ageExpireT, g.ageShrinkWindow);
+    ctx.save(); ctx.translate(g.x, g.y); ctx.scale(shrinkS, shrinkS); ctx.globalAlpha = .9; ctx.fillStyle = EMBER;
+    ctx.beginPath(); ctx.arc(0, 0, g.r * .55, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = EMBER;
     // 3 jittered strands instead of one static line — a heavier "falling
     // sand" look. Jitter is derived from the grain's own (constant, since it
@@ -1178,7 +1181,7 @@ function drawBattle() {
     for (let k = 0; k < 3; k++) {
       const off = (((seed + k * 1.7) % 3) - 1) * 1.6;
       ctx.globalAlpha = .28 - k * .08;
-      line(g.x + off, g.y - g.r * 2.4, g.x + off, g.y - g.r * .6, 1);
+      line(off, -g.r * 2.4, off, -g.r * .6, 1);
     }
     ctx.restore();
   }
@@ -1191,7 +1194,7 @@ function drawBattle() {
     // actually got bigger through every later size increase to o.r itself
     // (only the hitbox did). Scaling by the orb's real current radius here
     // is what makes it visually match.
-    const hgScale = o.r / 11;
+    const hgScale = o.r / 11 * hazardShrinkScale(o.ageExpireT, o.ageShrinkWindow);
     ctx.scale(hgScale, hgScale);
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -1208,8 +1211,8 @@ function drawBattle() {
     // Gale's own projectile now that spears are gone. It curves as it
     // homes, so this is drawn fresh off its live velocity every frame
     // rather than a fixed spawn-time angle.
-    const ang = Math.atan2(f.vy, f.vx);
-    ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(ang);
+    const ang = Math.atan2(f.vy, f.vx), shrinkS = hazardShrinkScale(f.ageExpireT, f.ageShrinkWindow);
+    ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(ang); ctx.scale(shrinkS, shrinkS);
     ctx.strokeStyle = ctx.fillStyle = '#fff'; ctx.lineWidth = 1.5;
     line(9, 0, -9, 0, 1.5);
     ctx.beginPath(); ctx.moveTo(-9, 0); ctx.lineTo(-3, -8); ctx.lineTo(-3, 2); ctx.closePath(); ctx.fill();
@@ -1233,11 +1236,18 @@ function drawBattle() {
       // earlier points along the same wave (windLineXY's travelOverride)
       // so the S-shape it actually swept through is visible, the way a
       // gust bends a line of blown debris rather than firing it dead straight.
-      ctx.save(); ctx.globalAlpha = .8; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+      // Shrinks toward its own leading point (not the box origin) over its
+      // last-50%-of-lifetime window, same as every other capped hazard —
+      // translate to the head first and draw the rest of the trail relative
+      // to it so ctx.scale collapses the whole streak inward on itself
+      // instead of sliding it toward the box's (0,0).
+      const head = windLineXY(w, b), shrinkS = hazardShrinkScale(w.ageExpireT, w.ageShrinkWindow);
+      ctx.save(); ctx.translate(head.x, head.y); ctx.scale(shrinkS, shrinkS);
+      ctx.globalAlpha = .8; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
       ctx.beginPath();
       for (let k = 0; k <= 42; k += 7) {
         const p = windLineXY(w, b, Math.max(0, w.travel - k));
-        if (k === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+        if (k === 0) ctx.moveTo(0, 0); else ctx.lineTo(p.x - head.x, p.y - head.y);
       }
       ctx.globalAlpha = .8; ctx.stroke();
       ctx.restore();
@@ -1251,8 +1261,8 @@ function drawBattle() {
   for (const w of battle.echoBooks) {
     // A loose book, tumbling as it flies — matches the Archivist rather than
     // a generic ink blot, and the tumble makes its motion read clearly.
-    const rot = Math.atan2(w.vy, w.vx) + w.wobble * w.spin * .3;
-    ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(rot);
+    const rot = Math.atan2(w.vy, w.vx) + w.wobble * w.spin * .3, shrinkS = hazardShrinkScale(w.ageExpireT, w.ageShrinkWindow);
+    ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(rot); ctx.scale(shrinkS, shrinkS);
     // Regular tumbling book: make it larger (2x)
     ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
     ctx.fillRect(-9, -12, 18, 24); ctx.strokeRect(-9, -12, 18, 24);
@@ -1284,7 +1294,8 @@ function drawBattle() {
     }
     ctx.stroke();
     ctx.restore();
-    ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(w.rot);
+    const shrinkS = hazardShrinkScale(w.ageExpireT, w.ageShrinkWindow);
+    ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(w.rot); ctx.scale(shrinkS, shrinkS);
     // Weaving book (ember/red) — keep original (smaller) size
     ctx.fillStyle = EMBER; ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
     ctx.fillRect(-4.5, -6, 9, 12); ctx.strokeRect(-4.5, -6, 9, 12);
@@ -1296,16 +1307,19 @@ function drawBattle() {
   }
   for (const p of [...battle.bullets, ...battle.aimedBullets]) {
     const speed = Math.hypot(p.vx, p.vy), ang = Math.atan2(p.vy, p.vx);
+    const shrinkS = hazardShrinkScale(p.ageExpireT, p.ageShrinkWindow);
+    ctx.save(); ctx.translate(p.x, p.y); ctx.scale(shrinkS, shrinkS);
     ctx.save(); ctx.globalAlpha = .35; ctx.strokeStyle = '#fff';
-    line(p.x, p.y, p.x - Math.cos(ang) * clamp(speed * .035, 8, 24), p.y - Math.sin(ang) * clamp(speed * .035, 8, 24), 2);
+    line(0, 0, -Math.cos(ang) * clamp(speed * .035, 8, 24), -Math.sin(ang) * clamp(speed * .035, 8, 24), 2);
     ctx.restore();
     // A soft ember glow halo behind the bright core — was a flat filled
     // circle, reads as a hot spark now instead of a plain dot.
     ctx.save(); ctx.globalAlpha = .3; ctx.fillStyle = EMBER;
-    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 1.9, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, p.r * 1.9, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
     ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
   for (const ball of battle.erifBounceBalls) drawErifBounceBall(ball);
   for (const eye of battle.erifEyeBalls) drawErifEyeBall(eye);
@@ -1613,7 +1627,8 @@ function drawBattle() {
     // fight's own start (battle.t) instead of the phase's.
     const left = Math.max(0, Math.ceil(ERIF_FIGHT_TIME_LIMIT - battle.t));
     // Same smaller size as the Reckoning's own box above — this one starts
-    // at 145, so it's 3 digits from the very start of the fight.
+    // at ERIF_FIGHT_TIME_LIMIT (140), so it's 3 digits from the very start
+    // of the fight.
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.strokeRect(685, uiY + 31, 40, 32);
     text(`${left}`, 705, uiY + 47, 20);
   }
@@ -1651,15 +1666,16 @@ function drawBattle() {
   }
 
   // Erif's hard time limits (see battle.erifReckoningFadeT/erifFightFadeT,
-  // erif.js — the Reckoning's own 100s cap and the whole fight's 145s cap
-  // respectively, mutually exclusive in practice) — a full-screen white-out
-  // ramping in over the final 5 seconds, "everything breaking down." Drawn
-  // last, on top of everything else (including the hit edge-flare above), so
-  // hazards/hands/the head all keep rendering right up until the screen
-  // actually goes white.
+  // erif.js — the Reckoning's own 100s cap and the whole fight's 140s cap
+  // respectively, mutually exclusive in practice) — both are loss conditions
+  // (running either clock out ends the fight in defeat), so this fades to
+  // black rather than the white used elsewhere for winning, over the final
+  // 5 seconds, "everything breaking down." Drawn last, on top of everything
+  // else (including the hit edge-flare above), so hazards/hands/the head all
+  // keep rendering right up until the screen actually goes black.
   const fightFade = Math.max(battle.erifReckoningFadeT, battle.erifFightFadeT);
   if (fightFade > 0) {
-    ctx.save(); ctx.fillStyle = '#fff'; ctx.globalAlpha = fightFade;
+    ctx.save(); ctx.fillStyle = '#000'; ctx.globalAlpha = fightFade;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
   }
@@ -1836,9 +1852,14 @@ function drawErifVictory() {
     if (t > 1.18) {
       const p = clamp((t - 1.18) / 5, 0, 1), radius = 20 + p * 760;
       ctx.fillStyle = '#fff'; ctx.globalAlpha = p; ctx.beginPath(); ctx.arc(W / 2, H / 2 - 20, radius, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+      // Lets drawVolumeMeters cross-fade its own dark panel down in step
+      // with this expanding circle, rather than staying a solid dark box
+      // clashing against an already-mostly-white screen until the fade
+      // fully completes (see lightScreenAmount, main.js).
+      lightScreenAmount = p;
     }
   } else if (t < 11.63) {
-    lightScreenActive = true;
+    lightScreenAmount = 1;
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = '#000'; ctx.strokeStyle = '#000';
     const a = clamp((t - FADE_END) / .75, 0, 1);
     text('You have outburned the flame.', W / 2, H / 2, 38, 'center', a);
@@ -1848,7 +1869,7 @@ function drawErifVictory() {
     // silent transition into the ending rather than one more scene change
     // (see updateErifVictory's musicFadeMult tie-in, which has the theme
     // already faded to nothing well before dialogue ever starts).
-    lightScreenActive = true;
+    lightScreenAmount = 1;
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
     const idx = Math.min(battle.victoryDialogueIndex, ERIF_FINAL_DIALOGUE.length - 1);
     // drawBossIcon always strokes in white, so it needs a dark backdrop of
@@ -1874,7 +1895,7 @@ function drawErifVictory() {
 }
 
 function drawEnding() {
-  lightScreenActive = true;
+  lightScreenAmount = 1;
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = '#000'; ctx.strokeStyle = '#000';
   const t = messageTimer;
   text('ERIF', W / 2, 210, 50, 'center', clamp(t / 1.2, 0, 1));
@@ -1907,9 +1928,12 @@ function drawErifTrueVictory() {
     if (t > .95) {
       const p = clamp((t - .95) / (FADE_END - .95), 0, 1), radius = 20 + p * 760;
       ctx.fillStyle = '#fff'; ctx.globalAlpha = p; ctx.beginPath(); ctx.arc(W / 2, H / 2 - 20, radius, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+      // See drawErifVictory's own matching note — same expanding-circle
+      // fade, same need for the volume meters to lighten in step with it.
+      lightScreenAmount = p;
     }
   } else {
-    lightScreenActive = true;
+    lightScreenAmount = 1;
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = '#000'; ctx.strokeStyle = '#000';
     const idx = Math.min(battle.trueVictoryDialogueIndex, ERIF_TRUE_FINAL_DIALOGUE.length - 1);
     // No backdrop box, no horns/eyes/mouth/emblem ring — by the time this
@@ -1933,7 +1957,7 @@ function drawErifTrueVictory() {
 }
 
 function drawTrueEnding() {
-  lightScreenActive = true;
+  lightScreenAmount = 1;
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = '#000'; ctx.strokeStyle = '#000';
   const t = messageTimer;
   text('ERIF', W / 2, 210, 50, 'center', clamp(t / 1.2, 0, 1));
@@ -1991,13 +2015,17 @@ function drawVolumeMeters() {
   // here this always-on overlay used to inherit whatever the previous
   // screen's draw call left behind — invisible (white boxes on a white
   // background) or just the wrong color on light-background screens (the
-  // ending, Erif's victory flash). lightScreenActive (set by those screens'
-  // own draw functions, see main.js/drawEnding etc.) lets this flip to dark
-  // ink with no backing panel there, instead of forcing the same dark panel
-  // + white ink that a black-background screen needs everywhere.
-  const fg = lightScreenActive ? '#000' : '#fff';
-  if (!lightScreenActive) {
-    ctx.fillStyle = 'rgba(0,0,0,.6)';
+  // ending, Erif's victory flash). lightScreenAmount (set by those screens'
+  // own draw functions, see main.js/drawEnding etc.) cross-fades this to
+  // dark ink with no backing panel there, instead of forcing the same dark
+  // panel + white ink a black-background screen needs everywhere. A
+  // continuous 0-1 amount rather than a plain on/off flag specifically for
+  // drawErifVictory/drawErifTrueVictory's own gradual expanding-circle
+  // fade — without it this stayed a solid dark panel right up until that
+  // fade fully completed, clashing against an already-mostly-white screen.
+  const v = Math.round(255 * (1 - lightScreenAmount)), fg = `rgb(${v},${v},${v})`;
+  if (lightScreenAmount < 1) {
+    ctx.fillStyle = `rgba(0,0,0,${.6 * (1 - lightScreenAmount)})`;
     ctx.fillRect(top.x - 46, top.y - 4, (bottom.x + bottom.w) - (top.x - 46) + 6, (bottom.y + bottom.h) - (top.y - 4) + 4);
   }
   ctx.fillStyle = fg;
@@ -2045,9 +2073,11 @@ function drawControlsLegend() {
   // x matches HP's own left position (250) — same neighborhood as the
   // HP/timer row instead of pinned to the screen corner.
   const x = 250, y2 = H - 8, y1 = y2 - 13;
-  // Same light-background flip as drawVolumeMeters — otherwise unreadable
-  // white-on-white during the ending/victory-flash screens.
-  ctx.save(); ctx.fillStyle = lightScreenActive ? '#000' : '#fff';
+  // Same light-background cross-fade as drawVolumeMeters (see
+  // lightScreenAmount, main.js) — otherwise unreadable white-on-white during
+  // the ending/victory-flash screens, or a jarring instant flip mid-fade.
+  const lv = Math.round(255 * (1 - lightScreenAmount));
+  ctx.save(); ctx.fillStyle = `rgb(${lv},${lv},${lv})`;
   text('WASD — MOVE     ARROWS/IJKL — SHIELD', x, y1, 10.5, 'left', .55);
   // The Reckoning repurposes Space as a real attack button (see
   // handleErifPunch, erif.js) instead of its usual confirm/advance role —

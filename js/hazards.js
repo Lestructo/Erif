@@ -92,6 +92,49 @@ function shieldFacingBlocks(hazX, hazY, side) {
   return diff <= shieldAngleTolerance();
 }
 
+// Normal-tier hazards travel at half speed (DIFFICULTY_TIERS) but every
+// existing despawn check below is a fixed position boundary — since
+// time-to-cross-a-fixed-distance is distance/speed and the distance is the
+// same regardless of tier, Normal-tier hazards always spend exactly
+// .75/.5 = 1.5x as long on screen as Hard's, even though nothing actually
+// got harder to dodge — it just reads as clutter piling up.
+// Rather than cutting that natural lifetime short outright (which read as
+// an abrupt pop), a hazard now lives out its own full natural transit time
+// on Normal, but visibly shrinks away over the last 50% of it, reaching
+// zero size exactly at that natural end point — the decluttering comes from
+// it reading as smaller/fading, not from it vanishing early. naturalNormalSeconds
+// is a per-call-site literal (that hazard's own travel distance ÷ its
+// Normal-scaled speed, worked out by hand) rather than something this
+// derives generically — most of these hazards travel diagonally, home
+// toward the soul's live position, or curve with a capped turn rate, so
+// there's no single closed-form distance to plug in uniformly.
+// hazardAgeFields computes both pieces ONCE at spawn time and is spread onto
+// the hazard object itself (`...hazardAgeFields(N)`), rather than threading
+// naturalNormalSeconds through both the update AND render loops separately —
+// also the only way this cleanly supports an array fed by multiple spawn
+// sites with different natural travel times (e.g. battle.bullets, spawned
+// from 4 different Erif phases with their own distances/speeds). On Hard,
+// ageExpireT is always Infinity, so hazardExpired/hazardShrinkScale below
+// both naturally no-op forever.
+function hazardAgeFields(naturalNormalSeconds) {
+  return {
+    ageExpireT: difficultyTier === 'normal' ? battle.t + naturalNormalSeconds : Infinity,
+    ageShrinkWindow: naturalNormalSeconds * 0.5,
+  };
+}
+function hazardExpired(expireT) { return battle.t > expireT; }
+// For render.js — an aging-out hazard used to just instantly pop the moment
+// it expired, which read as a glitch rather than a fix. Returns 1 normally
+// (full size), easing down to 0 over the hazard's own last-50%-of-lifetime
+// shrinkWindow (see hazardAgeFields) leading up to expireT, so it visibly
+// shrinks away instead. Callers wrap their draw call with `ctx.scale(s, s)`
+// right after translating to the hazard's position — works uniformly for
+// any shape (circle, spear, book...) without touching each one's internal
+// geometry.
+function hazardShrinkScale(expireT, shrinkWindow) {
+  return clamp((expireT - battle.t) / shrinkWindow, 0, 1);
+}
+
 // ---- Ring / gap rotating-dodge (Hourglass family) ----
 // origin/expand are both defaulted off, so every existing call site is
 // untouched — origin lets a ring spawn centered somewhere other than the box
@@ -125,6 +168,11 @@ function updateRingHazards(dt) {
       if (!ringAngleIsOpen(r, a)) hurt();
     }
   }
+  // No Normal-mode linger cap on the expand branch (currently just the
+  // Reckoning's slam shockwave) — the Reckoning is Hard-only, so a cap here
+  // could never actually fire; RING_EXPAND_MAX_R alone bounds its lifetime.
+  // A regular shrink-to-dodge ring's whole lifetime IS its danger window, so
+  // it never gets any age-based removal at all — just the natural r > 0.
   battle.rings = battle.rings.filter(r => r.expand ? r.r < RING_EXPAND_MAX_R : r.r > 0);
 }
 
@@ -175,7 +223,10 @@ function launchSpear(t) {
   if (t.side === 'down') { y = b.y + b.h + 18; vy = -speed; }
   if (t.side === 'left') { x = b.x - 18; vx = speed; }
   if (t.side === 'right') { x = b.x + b.w + 18; vx = -speed; }
-  battle.spears.push({ x, y, vx, vy, side: t.side, r: 8, family: t.family, kind: 'spear' });
+  // naturalNormalSeconds sized off the biggest arena any spear can appear in
+  // (the Reckoning's 910-wide box) so the cap never fires early in a
+  // smaller one — it's a ceiling, not a target.
+  battle.spears.push({ x, y, vx, vy, side: t.side, r: 8, family: t.family, kind: 'spear', ...hazardAgeFields(5.0) });
   tone(260, .025, 'square', .018);
 }
 // countOverride lets a caller pick the exact burst size (e.g. Erif's
@@ -221,7 +272,7 @@ function updateSpearHazards(dt, forgiving = false, launchFn = launchSpear) {
       if (d < blockRadius) { p.dead = true; tone(520, .04, 'square', .023); spawnSparks(p.x, p.y, Math.round(4 + p.r * .3), { color: EMBER, speed: [50, 110], life: .3 }); }
     } else if (d < hitRadius) { p.dead = true; hurt(); }
   }
-  battle.spears = battle.spears.filter(p => !p.dead && p.x > b.x - 50 && p.x < b.x + b.w + 50 && p.y > b.y - 50 && p.y < b.y + b.h + 50);
+  battle.spears = battle.spears.filter(p => !p.dead && !hazardExpired(p.ageExpireT) && p.x > b.x - 50 && p.x < b.x + b.w + 50 && p.y > b.y - 50 && p.y < b.y + b.h + 50);
 }
 
 // ---- Spear pattern variety (layered on top of the base volley/needles,

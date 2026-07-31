@@ -96,6 +96,10 @@ function makeBattle(type) {
     repriseArchivistRound: 0,
     repriseArchivistSuccesses: 0,
     repriseArchivistDone: false,
+    // Set fresh the instant the Reprise's Verdict segment begins (see
+    // erif.js's REPRISE_TARGET_DURATION catch-up) — 0 here is never actually
+    // read as a real duration, only as a safe placeholder before that point.
+    repriseVerdictDuration: 0,
     echoBooks: [],
     echoBookTimer: 1.3,
     echoBookTrail: [],
@@ -207,6 +211,12 @@ function makeBattle(type) {
     // updateEnraged's math/memory dispatch.
     enrageSegmentIndex: 0,
     enrageSegmentProgress: 0,
+    // Set fresh the instant Enraged actually begins (see beginErifEnraged,
+    // erif.js's ENTER_FINAL_CONVERGENCE_REMAINING) — 0 here is never read as
+    // a real value, only a safe placeholder before that point.
+    enrageBudget: 0,
+    enrageMemoryCap: 0,
+    enrageMathBurstCap: 0,
     // The Enraged-entrance box-widening animation (see beginErifEnraged in
     // erif.js) — boxGrowFrom/To are plain {x,y,w,h} snapshots, not read
     // anywhere outside that one animation.
@@ -248,8 +258,8 @@ function makeBattle(type) {
     erifHandsLaughedAtFlurry: false,
     erifBounceBalls: [], // universal wall-bouncing projectiles, any finger can fire one
     erifEyeBalls: [], // permanent wall-bouncing "eyes" — one popped out per head-HP loss, never break, up to 8 by fight's end
-    erifReckoningFadeT: 0, // 0-1 white-out progress for the final 5s of the hard time limit
-    erifFightFadeT: 0, // same white-out progress, but for the whole fight's own hard 145s cap (see ERIF_FIGHT_TIME_LIMIT, erif.js) — every phase before the Reckoning
+    erifReckoningFadeT: 0, // 0-1 black-out progress for the final 5s of the hard time limit (a loss)
+    erifFightFadeT: 0, // same black-out progress, but for the whole fight's own hard 140s cap (see ERIF_FIGHT_TIME_LIMIT, erif.js) — every phase before the Reckoning
     punchFlashT: 0, punchDir: 0, // the boxing-glove shield-punch visual
     trueVictoryStarted: false,
     trueVictoryT: 0,
@@ -534,7 +544,7 @@ function updateBattle(dt) {
   // never this generic duration timeout — excluded explicitly so a long
   // twist-phase attempt can never fall through to the ordinary victory text.
   // Erif's own fight is excluded too, for a different reason: it now has its
-  // own real hard 145s cap (ERIF_FIGHT_TIME_LIMIT, updateErif in erif.js)
+  // own real hard 140s cap (ERIF_FIGHT_TIME_LIMIT, updateErif in erif.js)
   // that ends in an actual loss, replacing the old soft duration-elapsed
   // auto-win fallback this line still is for every lieutenant.
   if (mode === 'battle' && battle.t >= battle.duration && battle.phase !== PHASE_LAST_WAGER && battle.type !== 'erif') finishBattle(true);

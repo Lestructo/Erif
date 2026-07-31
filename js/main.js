@@ -5,11 +5,17 @@
 
 // Set by drawEnding/drawTrueEnding/drawErifVictory's white-flash phase (see
 // render.js) each frame a light background is actually on screen, and read
-// back by the always-on overlays (drawVolumeMeters) so they can invert their
-// own colors to stay legible instead of always assuming a dark background.
-// Reset here at the top of every frame's draw() so a screen that stops being
-// light-background doesn't leave it stuck on.
-let lightScreenActive = false;
+// back by the always-on overlays (drawVolumeMeters/drawControlsLegend) so
+// they can cross-fade their own colors to stay legible instead of always
+// assuming a dark background. A continuous 0-1 amount rather than a plain
+// on/off flag specifically for drawErifVictory/drawErifTrueVictory's own
+// gradual expanding-circle fade — those set it to that same fade's own
+// progress rather than snapping straight to 1, so the always-on overlays
+// lighten in step with the actual screen instead of staying a solid dark
+// panel right up until the fade fully completes. Reset here at the top of
+// every frame's draw() so a screen that stops being light-background
+// doesn't leave it stuck on.
+let lightScreenAmount = 0;
 
 // Esc pauses/resumes from any of the core "playing" modes — deliberately not
 // from dialogue/cutscenes/victory sequences, which are scripted and shouldn't
@@ -106,7 +112,7 @@ function update(dt) {
 }
 
 function draw() {
-  lightScreenActive = false;
+  lightScreenAmount = 0;
   // While paused, the frozen gameplay screen underneath is still drawn
   // (via whichever mode we paused out of) with the pause overlay on top,
   // rather than replacing it with a blank screen.
@@ -117,10 +123,10 @@ function draw() {
   else if (drawMode === 'battle') {
     // A very short, small-amplitude shake on taking a hit (battle.hitShakeT,
     // set in hurt(), battle-core.js), plus a second source that ramps in
-    // right alongside either of Erif's hard-timeout white-outs
+    // right alongside either of Erif's hard-timeout black-outs
     // (battle.erifReckoningFadeT/erifFightFadeT, 0-1 over their last 5s —
     // see updateErifHandsFinale/updateErif, erif.js) so the screen visibly
-    // rattles apart as it fades, not just goes quietly white. Both wrap only
+    // rattles apart as it fades, not just goes quietly black. Both wrap only
     // the arena draw call so the controls legend/volume meters/pause overlay
     // drawn below stay put.
     const hitShake = battle ? (battle.hitShakeT / .12) * 4 : 0;
