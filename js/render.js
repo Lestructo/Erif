@@ -929,11 +929,11 @@ function drawBattle() {
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.strokeStyle = '#fff'; ctx.fillStyle = '#fff';
   const b = battle.box; drawFloorGrid(b.x, b.y, b.w, b.h);
   drawEmbers(); // background layer — behind every hazard/boss/candle drawn below
-  // The Reckoning (Hard-only true final phase) skips the header entirely —
-  // there's no room once the arena fills nearly the whole canvas, and
-  // Erif's own name/portrait were already just shown in the twist dialogue
-  // right before this phase begins.
-  if (!(battle.type === 'erif' && battle.phase === PHASE_LAST_WAGER)) {
+  // Enraged onward (Enraged, Final Convergence, the Reckoning) all skip the
+  // header — the arena is tall enough from Enraged on (see ERIF_ENRAGE_BOX,
+  // erif.js) that there isn't room for both it and the box, and Erif's own
+  // name/portrait were already shown plenty by that point in the fight.
+  if (!(battle.type === 'erif' && battle.phase >= PHASE_ENRAGED)) {
     // Scaled down further and nudged up — some portraits (Erif's orbiting
     // emblem ring, the Verdict's rotating halo) reach far enough down at full
     // size that even the previous .82 scale still collided with the name text

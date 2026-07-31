@@ -233,10 +233,13 @@ function beginVerdictSpiral(hard = false) {
 function spawnVerdictContinuousRing(hard = false) {
   const phase = clamp((verdictPhaseProgress(hard) - .5) / .5, 0, 1);
   if (battle.ringGapA == null) battle.ringGapA = rand(0, Math.PI * 2);
-  const step = lerp(hard ? .125 : .10, hard ? .16 : .135, phase);
+  // Normal's own numbers nudged a step tighter (was .10-.135/.035/175/.5) —
+  // still clearly gentler than Hard's .125-.16/.05/205/.37, just not quite
+  // as loose as before.
+  const step = lerp(hard ? .125 : .11, hard ? .16 : .145, phase);
   battle.ringGapA += battle.ringArcDirection * step;
   const tinyWobble = Math.sin(battle.t * (hard ? 2.3 : 1.8)) * .012;
-  spawnRing(hard, battle.ringGapA + tinyWobble, 360, battle.ringArcDirection * (hard ? .05 : .035), hard ? 205 : 175, hard ? .37 : .5);
+  spawnRing(hard, battle.ringGapA + tinyWobble, 360, battle.ringArcDirection * (hard ? .05 : .04), hard ? 205 : 188, hard ? .37 : .44);
 }
 // moveFn lets a caller swap in moveSoulWithShield instead of the standalone
 // trial's own moveSoulFree — Erif's Reprise segment (see erif.js) needs the

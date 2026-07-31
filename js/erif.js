@@ -619,17 +619,18 @@ function spawnEnragedShard() {
 // The arena widens AND grows downward once Enraged begins, and stays that
 // size through Final Convergence and the true final phase (none of which
 // ever reset battle.box) — every family hitting at once has more room to
-// spread out in, and the HP row/timer/phase-name below the box (now
-// positioned relative to battle.box.y + battle.box.h, see drawBattle) get
-// pushed low enough to slide off the bottom of the screen entirely. From
-// here on the only HP read the player gets is the candle's own visibly
-// shrinking wax — deliberately no numeric readout anymore.
-// h=390 puts the box's own bottom edge at y=639 — right at the canvas edge
-// (H=640) but still fully on-screen, so the actual playable arena (and
-// anything spawning near its bottom) stays visible. The UI row below it
-// (HP/timer/phase-name, all positioned relative to this bottom edge — see
-// drawBattle) starts at +16 past that, comfortably past 640 and gone.
-const ERIF_ENRAGE_BOX = { x: 140, y: 249, w: 680, h: 390 };
+// spread out in. y moved way up (249 -> 30, same top margin the Reckoning's
+// own big arena already uses) instead of leaving it at 249 — at that height
+// plus the same y, the box's own bottom edge landed at 639, one pixel off
+// the canvas floor (H=640), pushing the HP/timer/phase-name row and the
+// controls legend/volume meters entirely off-screen. Moving the box up
+// (not shrinking it — w/h are unchanged) instead reopens that same ~200px
+// of room below it that every other phase already has, so all of that stays
+// visible instead of getting hidden. The header (boss icon/name normally
+// drawn above the box) is suppressed for every phase from here on now too
+// (see drawBattle, render.js) — there isn't room for both it and the box
+// at this height, and the box is what actually needs the space.
+const ERIF_ENRAGE_BOX = { x: 140, y: 30, w: 680, h: 390 };
 const ERIF_ENRAGE_BOX_GROW_TIME = 1.8;
 // The foreground focus of Enraged now alternates between math (the Oracle-
 // style question+laser mechanic) and memory (an Archivist-style sigil
@@ -727,7 +728,15 @@ function updateEnraged(dt) {
     battle.ringGapA = rand(0, Math.PI * 2); battle.ringArcDirection = choose([-1, 1]);
     battle.enrageRingTimer = .15; battle.enrageVolleyTimer = 1.1; battle.enrageShardTimer = .12; battle.enrageQuestionTimer = 1.8;
     battle.maskMirrorTimer = rand(1.8, 2.8);
-    const b = battle.box;
+    // Anchored off the box's own final grown size (battle.boxGrowTo, always
+    // ERIF_ENRAGE_BOX by the time this runs — see beginErifEnraged), not the
+    // live battle.box — this whole block only runs once, on Enraged's very
+    // first frame, while battle.box is still mid-grow (barely nudged off its
+    // much smaller pre-Enraged size). Anchoring off that snapshot left
+    // several hands sitting well inside the fully-grown arena once the
+    // animation caught up, spawning their shards from inside the frame
+    // instead of outside it.
+    const b = battle.boxGrowTo;
     const anchors = [[b.x - 28, b.y + 45], [b.x + b.w + 28, b.y + 45], [b.x - 28, b.y + b.h - 45], [b.x + b.w + 28, b.y + b.h - 45], [b.x + b.w * .32, b.y - 30], [b.x + b.w * .68, b.y + b.h + 30]];
     battle.hands = anchors.map(a => makeHand(a[0], a[1], b.x + b.w / 2, b.y + b.h / 2));
   }

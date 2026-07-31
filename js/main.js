@@ -137,16 +137,12 @@ function draw() {
   else if (drawMode === 'trueEnding') drawTrueEnding();
   else drawBoot();
   if (mode === 'paused') drawPauseOverlay();
-  // Once Erif's box has grown for the "can't see your HP" gimmick (Enraged
-  // and Final Convergence), the always-on legend/meters strip at the bottom
-  // is hidden too — leaving it up would give away a fixed reference point
-  // right where the arena floor now extends to, defeating the
-  // disorientation. The Reckoning (PHASE_LAST_WAGER) is deliberately
-  // excluded from this — its own arena box is shorter specifically so HP
-  // and the controls legend (now including the Space-to-attack hint) stay
-  // on-screen, since this phase is a real fight the player needs both for.
-  const hideBottomUI = drawMode === 'battle' && battle && battle.type === 'erif' && battle.phase >= PHASE_ENRAGED && battle.phase !== PHASE_LAST_WAGER;
-  if (!hideBottomUI) { drawControlsLegend(); drawVolumeMeters(); }
+  // Used to hide this strip for Enraged/Final Convergence (a deliberate
+  // "can't see your HP" disorientation gimmick) — ERIF_ENRAGE_BOX (erif.js)
+  // now sits high enough on screen that there's always room for this below
+  // it, same as every other phase including the Reckoning, so it's no
+  // longer hidden anywhere.
+  drawControlsLegend(); drawVolumeMeters();
   if (fade > 0) { ctx.fillStyle = '#fff'; ctx.globalAlpha = fade; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
 }
 
