@@ -596,10 +596,25 @@ function startErifEnrageDialogue() {
   battle.enrageDialogueShown = true;
   if (!ERIF_ENRAGE_DIALOGUE.length) { beginErifEnraged(); return; } // safety fallback if ever reached before lore is written
   clearHazards();
-  // Triple speed (see updateDialogueReveal's charsPerSec) — this one already
-  // plays through automatically with no player input, so there's no reason
-  // to make it linger at the normal typing pace.
-  dialogue = { lines: ERIF_ENRAGE_DIALOGUE, index: 0, after: 'erifEnraged', context: 'battle', charsPerSec: DIALOGUE_CHARS_PER_SEC * 3 };
+  // Base pace is triple speed (see updateDialogueReveal's charsPerSec) —
+  // this dialogue already plays through automatically with no player
+  // input, so there's no reason to make it linger at the normal typing
+  // pace by default. But it also keeps battle.t advancing the whole time
+  // now (see main.js), so its own length affects exactly when the
+  // Enraged theme actually starts — slowed down (never sped up) from that
+  // base pace as needed so it finishes right as the whole-fight timer
+  // (ERIF_FIGHT_TIME_LIMIT) hits 80s remaining, lining the music up to a
+  // consistent moment instead of wherever the player happened to finish
+  // Convergence. If it would already naturally run past that point, it
+  // just plays at the normal triple-speed pace.
+  const baseCps = DIALOGUE_CHARS_PER_SEC * 3;
+  const naturalDuration = ERIF_ENRAGE_DIALOGUE.reduce((sum, line) => sum + line.length / baseCps + DIALOGUE_AUTO_HOLD, 0);
+  const targetDuration = Math.max(0, (ERIF_FIGHT_TIME_LIMIT - 80) - battle.t);
+  const slowFactor = targetDuration > naturalDuration ? targetDuration / naturalDuration : 1;
+  dialogue = {
+    lines: ERIF_ENRAGE_DIALOGUE, index: 0, after: 'erifEnraged', context: 'battle',
+    charsPerSec: baseCps / slowFactor, holdTime: DIALOGUE_AUTO_HOLD * slowFactor,
+  };
   mode = 'dialogue';
   tone(42, .42, 'sawtooth', .065);
 }
@@ -797,7 +812,7 @@ function updateEnraged(dt) {
         battle.qOptionCountOverride = enrageSeg ? enrageSeg.value : null;
         battle.q = generateOracleQuestion(true);
         battle.qOptionCountOverride = null;
-        battle.qMax = 3.15; battle.qTimer = battle.qMax; battle.lasers = [];
+        battle.qMax = 5.15; battle.qTimer = battle.qMax; battle.lasers = []; // +2s over the base 3.15s
         tone(335, .10, 'triangle', .035);
       }
     } else if (battle.lasers.length === 0) {
@@ -1738,9 +1753,9 @@ function updateErif(dt) {
     // updateRepriseArchivist/updateRepriseOracle/updateRepriseHourglass
     // above). Executioner and Mask get their own shorter fixed window (5s)
     // instead of the default — the whole Reprise is meant to move fast.
-    // Verdict gets its own longer window again (9s, up from the shared 7s)
-    // — its normal/burst cycle (see verdictPhaseProgress, bosses.js) needs
-    // real room to actually show both halves.
+    // Gale gets its own window too (5s). Verdict gets its own longer window
+    // (10s) — its normal/burst cycle (see verdictPhaseProgress, bosses.js)
+    // needs real room to actually show both halves.
     const segmentDone =
       name === 'archivist' ? battle.repriseArchivistDone :
       name === 'oracle' ? battle.repriseOracleDone :
@@ -1748,7 +1763,8 @@ function updateErif(dt) {
       name === 'witness' ? battle.repriseWitnessDone :
       battle.repriseSegElapsed >= (
         name === 'executioner' || name === 'mask' ? 5 :
-        name === 'verdict' ? 9 :
+        name === 'gale' ? 5 :
+        name === 'verdict' ? 10 :
         REPRISE_SEGMENT
       );
     if (segmentDone) {

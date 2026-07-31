@@ -83,7 +83,11 @@ function update(dt) {
       if (battle) battle.t += dt;
       const len = dialogue.lines[dialogue.index].length;
       if ((dialogue.revealCount || 0) >= len) {
-        dialogue.holdTimer = (dialogue.holdTimer ?? DIALOGUE_AUTO_HOLD) - dt;
+        // dialogue.holdTime lets a specific dialogue (see
+        // startErifEnrageDialogue) stretch this hold out beyond the shared
+        // default, same convention dialogue.charsPerSec already uses for
+        // typing speed.
+        dialogue.holdTimer = (dialogue.holdTimer ?? dialogue.holdTime ?? DIALOGUE_AUTO_HOLD) - dt;
         if (dialogue.holdTimer <= 0) { dialogue.holdTimer = null; advanceDialogue(); }
       }
     } else if (tap(' ')) advanceDialogue();
