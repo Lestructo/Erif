@@ -156,6 +156,18 @@ function hazardExpired(expireT) { return battle.t > expireT; }
 function hazardShrinkScale(expireT, shrinkWindow) {
   return clamp((expireT - battle.t) / shrinkWindow, 0, 1);
 }
+// The actual collision radius for a hazard using hazardAgeFields — its base
+// `r` scaled down by the exact same hazardShrinkScale factor render.js's
+// draw calls already apply visually. Every hit-test below used to compare
+// against the raw, never-shrunk `o.r` while the on-screen sprite visibly
+// shrank toward nothing over the hazard's last-50%-of-lifetime shrink
+// window (Normal mode only — ageExpireT is Infinity on Hard, so this is a
+// no-op there) — a hazard could still hit you at full size well after it
+// looked mostly gone. Takes the whole object rather than separate
+// r/ageExpireT/ageShrinkWindow args so every call site stays a one-liner.
+function hazardHitRadius(o) {
+  return o.r * hazardShrinkScale(o.ageExpireT, o.ageShrinkWindow);
+}
 
 // ---- Ring / gap rotating-dodge (Hourglass family) ----
 // origin/expand are both defaulted off, so every existing call site is
@@ -298,7 +310,8 @@ function updateSpearHazards(dt, forgiving = false, launchFn = launchSpear) {
   battle.telegraphs = battle.telegraphs.filter(t => !t.fired);
   for (const p of battle.spears) {
     p.x += p.vx * dt; p.y += p.vy * dt;
-    const hitRadius = forgiving ? 5.25 + p.r * .72 : s.r + p.r + 2;
+    const shrunkR = hazardHitRadius(p);
+    const hitRadius = forgiving ? 5.25 + shrunkR * .72 : s.r + shrunkR + 2;
     const d = dist(p.x, p.y, s.x, s.y);
     // Shield Forgiveness widens both the BLOCK radius and (via
     // shieldFacingBlocks) the angle a correctly-aimed shield still catches a

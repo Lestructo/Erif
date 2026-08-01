@@ -263,7 +263,7 @@ function updateRepriseOracle(dt) {
     battle.bullets.push({ x, y: b.y - 9.6, vx: rand(-55, 55) * DIFFICULTY.projectileMult, vy: 275 * DIFFICULTY.projectileMult, r: 5, ...hazardAgeFields(3) });
     battle.spawn = .19;
   }
-  for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (circleHit(p, p.r)) hurt(); }
+  for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (circleHit(p, hazardHitRadius(p))) hurt(); }
   battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20 && !hazardExpired(p.ageExpireT));
 }
 
@@ -291,7 +291,7 @@ function updateCarriedRepriseHazards(dt, active) {
   if (active !== 'verdict') updateRingHazards(dt);
   if (active !== 'gale') { updateGaleFlags(dt); updateWindLines(dt); }
   if (active !== 'oracle') {
-    for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (circleHit(p, p.r)) hurt(); }
+    for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (circleHit(p, hazardHitRadius(p))) hurt(); }
     // Same bullets, same 2.18 as Reprise-Oracle's own spawn above — this is
     // just the carry-over tick for when a later segment is active.
     battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20 && !hazardExpired(p.ageExpireT));
@@ -636,9 +636,9 @@ function updateConvergence(dt) {
   }
 
   updateConvergenceMarks(dt);
-  for (const p of battle.aimedBullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, p.r)) hurt(); }
+  for (const p of battle.aimedBullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, hazardHitRadius(p))) hurt(); }
   battle.aimedBullets = battle.aimedBullets.filter(p => !hazardExpired(p.ageExpireT) && p.x > battle.box.x - 40 && p.x < battle.box.x + battle.box.w + 40 && p.y > battle.box.y - 40 && p.y < battle.box.y + battle.box.h + 40);
-  for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, p.r)) hurt(); }
+  for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, hazardHitRadius(p))) hurt(); }
   battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20 && !hazardExpired(p.ageExpireT));
   updateRingHazards(dt); updateSpearHazards(dt, true); updateShapeHazards(dt, true);
   // Hourglass/Gale cues (see spawnConvergenceCueHazard above) spawn real
@@ -1120,9 +1120,9 @@ function updateFinalConvergence(dt) {
     }
   }
   updateConvergenceMarks(dt);
-  for (const p of battle.aimedBullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, p.r)) hurt(); }
+  for (const p of battle.aimedBullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, hazardHitRadius(p))) hurt(); }
   battle.aimedBullets = battle.aimedBullets.filter(p => !hazardExpired(p.ageExpireT) && p.x > battle.box.x - 40 && p.x < battle.box.x + battle.box.w + 40 && p.y > battle.box.y - 40 && p.y < battle.box.y + battle.box.h + 40);
-  for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, p.r)) hurt(); }
+  for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, hazardHitRadius(p))) hurt(); }
   battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20 && !hazardExpired(p.ageExpireT));
   updateRingHazards(dt); updateSpearHazards(dt, true); updateShapeHazards(dt, true);
   // Hourglass/Gale cues now spawn real sand/orbs/flags/wind rows (see
@@ -1576,7 +1576,7 @@ function updateErifGemShards(dt) {
   const b = battle.box;
   for (const s of battle.erifGemShards) {
     s.x += s.vx * dt; s.y += s.vy * dt;
-    if (convergenceCircleHit(s, s.r)) {
+    if (convergenceCircleHit(s, hazardHitRadius(s))) {
       s.dead = true; hurt();
       spawnSparks(s.x, s.y, 9, { color: '#fff', speed: [70, 150], life: .35 });
       tone(200, .08, 'sawtooth', .03);
@@ -1998,7 +1998,7 @@ function updateErifHandHazards(dt) {
       battle.inkSpawn = .17;
     }
   }
-  for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, p.r)) hurt(); }
+  for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (convergenceCircleHit(p, hazardHitRadius(p))) hurt(); }
   battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20 && !hazardExpired(p.ageExpireT));
   if (battle.erifBeamPhase === 'telegraph') {
     battle.erifBeamTimer -= dt;

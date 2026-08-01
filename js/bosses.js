@@ -35,7 +35,7 @@ function updateSandGrains(dt) {
   const b = battle.box, s = battle.soul;
   for (const g of battle.sandGrains) {
     g.y += g.vy * dt;
-    if (dist(g.x, g.y, s.x, s.y) < s.r + g.r - 2) { g.dead = true; hurt(); }
+    if (dist(g.x, g.y, s.x, s.y) < s.r + hazardHitRadius(g) - 2) { g.dead = true; hurt(); }
     // A brief dust puff right as a grain lands at the arena floor (not the
     // player) — a miss used to just silently vanish a little further down.
     else if (!g.puffed && g.y >= b.y + b.h) { g.puffed = true; spawnSparks(g.x, b.y + b.h, 3, { color: EMBER, speed: [20, 50], life: .25 }); noiseHit(.05, .006, 2600, null, 'sfx'); }
@@ -126,7 +126,7 @@ function updateHourglassOrbs(dt) {
     }
     o.x += Math.cos(o.heading) * o.speed * moveTs * dt;
     o.y += Math.sin(o.heading) * o.speed * moveTs * dt;
-    if (dist(o.x, o.y, s.x, s.y) < s.r + o.r - 2) { o.dead = true; hurt(); }
+    if (dist(o.x, o.y, s.x, s.y) < s.r + hazardHitRadius(o) - 2) { o.dead = true; hurt(); }
   }
   // 20 matches the existing totalAge>=20 forceOut threshold above (already
   // this hazard's own "nothing should linger forever" ceiling) — Normal
@@ -427,7 +427,7 @@ function updateGaleFlags(dt) {
     f.x += f.vx * dt + Math.cos(f.wave) * 14 * dt;
     f.y += f.vy * dt + Math.sin(f.wave) * 14 * dt;
     const side = velocityToSide(f.vx, f.vy);
-    const hitRadius = s.r + f.r - 2, d = dist(f.x, f.y, s.x, s.y);
+    const hitRadius = s.r + hazardHitRadius(f) - 2, d = dist(f.x, f.y, s.x, s.y);
     if (shieldFacingBlocks(f.x, f.y, side)) {
       const blockRadius = hitRadius + UPGRADE_CATALOG.shield.perStack * (save.upgrades.shield || 0);
       if (d < blockRadius) { f.dead = true; tone(480, .05, 'square', .022); spawnSparks(f.x, f.y, Math.round(4 + f.r * .3), { color: EMBER, speed: [40, 90], life: .3 }); }
@@ -870,7 +870,7 @@ function updateOracle(dt, hard = false) {
     battle.bullets.push({ x, y: b.y - 9.6, vx: (hard ? rand(-55, 55) : rand(-18, 18)) * DIFFICULTY.projectileMult, vy: (hard ? 275 : 215) * DIFFICULTY.projectileMult, r: 5, ...hazardAgeFields(3) });
     battle.spawn = hard ? .1583 : .2583; // 20% more often (was .19/.31)
   }
-  for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (circleHit(p, p.r)) hurt(); }
+  for (const p of battle.bullets) { p.x += p.vx * dt; p.y += p.vy * dt; if (circleHit(p, hazardHitRadius(p))) hurt(); }
   battle.bullets = battle.bullets.filter(p => p.y < battle.box.y + battle.box.h + 20 && !hazardExpired(p.ageExpireT));
 }
 
@@ -1028,7 +1028,7 @@ function updateEchoBooks(dt) {
       battle.echoBookTrail.push({ x: w.x, y: w.y, t: 2, vx: rand(-6, 6), vy: rand(-6, 6) });
       w.trailT = .07;
     }
-    if (dist(w.x, w.y, battle.soul.x, battle.soul.y) < battle.soul.r + w.r - 3) { w.dead = true; hurt(); }
+    if (dist(w.x, w.y, battle.soul.x, battle.soul.y) < battle.soul.r + hazardHitRadius(w) - 3) { w.dead = true; hurt(); }
   }
   battle.echoBooks = battle.echoBooks.filter(w => !w.dead && !hazardExpired(w.ageExpireT) &&
     w.x > battle.box.x - 40 && w.x < battle.box.x + battle.box.w + 40 &&
@@ -1081,7 +1081,7 @@ function updateWeavingBooks(dt) {
       battle.trailSquares.push({ x: p.x, y: p.y, t: 1.8, size: 10, harmless:true, family: w.family });
       w.trailT = .16;
     }
-    if (dist(p.x, p.y, s.x, s.y) < s.r + w.r - 3) { w.dead = true; hurt(); }
+    if (dist(p.x, p.y, s.x, s.y) < s.r + hazardHitRadius(w) - 3) { w.dead = true; hurt(); }
   }
   // Tightened to 20 (was 32, sized off Enraged's own bigger 680x390 box —
   // this hazard also appears there and via Convergence's archivist cue, not
@@ -1214,7 +1214,7 @@ function updateMaskShards(dt) {
     w.wobble += dt * 2.6;
     w.x += w.vx * dt + Math.cos(w.wobble) * 9 * dt;
     w.y += w.vy * dt + Math.sin(w.wobble) * 9 * dt;
-    const hitRadius = s.r + w.r - 2, d = dist(w.x, w.y, s.x, s.y);
+    const hitRadius = s.r + hazardHitRadius(w) - 2, d = dist(w.x, w.y, s.x, s.y);
     if (d < hitRadius) { w.dead = true; hurt(); }
   }
   // 20 still comfortably covers a straight edge-through-center-and-out-the-
