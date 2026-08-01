@@ -250,8 +250,22 @@ function warmSeekPoint(audio, seekTime) {
     audio.currentTime = seekTime;
     audio.muted = true;
     audio.play().then(() => {
-      setTimeout(() => { try { audio.pause(); audio.currentTime = seekTime; audio.muted = false; } catch {} }, 150);
-    }).catch(() => {});
+      // Same 150ms delay as before the fix — that's deliberate warm-up time
+      // for the browser to actually decode/buffer while "playing" muted,
+      // not just an arbitrary pause. What changed: three separate
+      // try/catches instead of one shared block. The original single try
+      // meant if audio.pause() ever threw (or currentTime did),
+      // audio.muted = false never ran either, leaving the element muted
+      // forever — confirmed to actually happen: a real track was seen
+      // mid-fight with muted=true, play() resolving fine, and genuinely no
+      // sound. Each statement now gets its own shot regardless of whether
+      // an earlier one failed, so the unmute always happens.
+      setTimeout(() => {
+        try { audio.pause(); } catch {}
+        try { audio.currentTime = seekTime; } catch {}
+        try { audio.muted = false; } catch {}
+      }, 150);
+    }).catch(() => { try { audio.muted = false; } catch {} }); // warm play() itself failed — don't leave it muted over a warm-up that never happened
   } catch {}
 }
 // Logs WHY a real-embedded track failed to load/decode instead of the
@@ -266,26 +280,27 @@ function logAudioLoadError(label, e) {
   const err = e.target && e.target.error;
   console.error(`[audio] ${label} failed to load`, err ? `code ${err.code}: ${err.message || '(no message)'}` : e);
 }
-// Builds a real embedded-MP3 <audio> track. Used to also route it through
-// the shared Web Audio graph (createMediaElementSource -> visualizerAnalyser
-// -> ctx.destination) so the Reckoning's tension visualizer could react to
-// it — dropped entirely, not just wrapped in a try/catch, after a real case
-// where that routing left a track completely and silently dead: every
-// oscillator-based sound in the game (sharing this exact same AudioContext)
-// played fine, only these MP3 tracks didn't, with zero thrown exception to
-// catch and zero console error — createMediaElementSource had (per spec)
-// already claimed the element's audio output entirely, exclusively into a
-// graph that, for whatever environment-specific reason, just wasn't
-// producing sound. There's no recovering from that once it's connected, so
-// the fix is to never make that connection for these two tracks at all —
-// they now play through their own plain default output, same as any
-// ordinary <audio> tag, with zero Web Audio involvement. The Reckoning's
-// visualizer still reacts to every other concurrent sound (hits, procedural
-// cues) sharing the real analyser — just not this track's own melody.
+// Builds a real embedded-MP3 <audio> track, routed through the shared Web
+// Audio graph (createMediaElementSource -> visualizerAnalyser ->
+// ctx.destination) so the Reckoning's tension visualizer can react to its
+// actual melody, not just whatever else happens to be playing alongside it.
+// This routing was removed for a while after a real case of a totally
+// silent theme track with zero thrown exception — that turned out to be a
+// genuinely unrelated bug (warmSeekPoint leaving the element's own .muted
+// stuck true, see its comment and setMusic's defensive `a.muted = false`),
+// now fixed at the actual source, so there's no reason for this routing to
+// stay disabled. Still wrapped in try/catch regardless — if
+// createMediaElementSource ever does throw in some environment, that
+// should degrade to plain default-output playback, not take the whole
+// track down with it.
 function buildThemeAudio(src, label) {
   const audio = new Audio(src);
   audio.loop = true; audio.preload = 'auto';
   audio.addEventListener('error', e => logAudioLoadError(label, e));
+  try {
+    ensureVisualizerAnalyser();
+    ensureAudioCtx().createMediaElementSource(audio).connect(visualizerAnalyser);
+  } catch (err) { console.error(`[audio] ${label} visualizer routing failed, playing without it`, err); }
   return audio;
 }
 let erifThemeAudio = null;
@@ -346,7 +361,7 @@ function playThemeWhenReady(audio, label) {
       console.log(`[audio] ${label}: post-resume ctx.state=${ac.state} — calling play()`);
       return audio.play();
     })
-    .then(() => console.log(`[audio] ${label}: play() resolved — paused=${audio.paused}, currentTime=${audio.currentTime}, volume=${audio.volume}`))
+    .then(() => console.log(`[audio] ${label}: play() resolved — paused=${audio.paused}, currentTime=${audio.currentTime}, volume=${audio.volume}, muted=${audio.muted}`))
     .catch(err => console.error(`[audio] ${label} play() rejected`, err));
 }
 function setMusic(name) {
@@ -367,6 +382,16 @@ function setMusic(name) {
       // stretch of near-silence, which is what actually read as playback
       // lag (preloading it earlier, see startBoss in battle-core.js, didn't
       // touch this since the file itself was already loaded in time).
+      // Confirmed root cause of the silent-theme bug: warmSeekPoint mutes
+      // the element during its own pre-buffering warm-up and un-mutes it
+      // 150ms later — if that cleanup never actually completed for
+      // whatever reason (its own bug, now fixed above, but this is the
+      // real playback attempt and shouldn't have to trust that a completely
+      // separate, earlier warm-up definitely succeeded), the track plays
+      // for real with play() resolving fine and paused=false, but stays
+      // permanently muted. Force it false here, unconditionally, right
+      // before the actual playback that matters.
+      a.muted = false;
       a.volume = musicVolume * .15; a.currentTime = .75;
       playThemeWhenReady(a, 'erif-theme');
     } catch (err) { console.error('[audio] setMusic(erif) threw before play() was even attempted', err); }
@@ -378,6 +403,8 @@ function setMusic(name) {
       // vs .75s, nudged up from 2s — still not quite past the silent intro)
       // — a different mastered MP3, opens with more near-silence before the
       // track actually starts, which read as playback lag.
+      // Same defensive unmute as setMusic('erif') above — see its comment.
+      a.muted = false;
       a.volume = musicVolume * .15; a.currentTime = 2.5;
       playThemeWhenReady(a, 'erif-true-theme');
     } catch (err) { console.error('[audio] setMusic(erifTrue) threw before play() was even attempted', err); }
