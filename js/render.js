@@ -2682,10 +2682,19 @@ function drawVolumeMeters() {
     const vol = info.key === 'music' ? musicVolume : sfxVolume;
     const filledCount = Math.round(vol * VOL_METER.count);
     text(info.label, r.x - 9, r.y + VOL_METER.blockH / 2 + 1, 9, 'right', .55);
+    // Past the normal 0-1 cap (see erif.js's volume-trip hand easter egg,
+    // which can push musicVolume to 1.5) — the bar itself can't show MORE
+    // than 10 full boxes (filledCount already exceeds VOL_METER.count,
+    // which on its own just reads as an ordinary full bar, no visible
+    // difference from a normal max). Glowing/pulsing the whole thing red is
+    // what actually communicates "this went past the cap" instead of a
+    // silent, invisible overflow.
+    const overflowing = vol > 1;
+    const overflowPulse = .6 + .4 * Math.sin(performance.now() / 90);
     for (let i = 0; i < VOL_METER.count; i++) {
       const bx = r.x + i * (VOL_METER.blockW + VOL_METER.gap), filled = i < filledCount;
-      ctx.strokeStyle = ctx.fillStyle = fg;
-      ctx.globalAlpha = filled ? 1 : .35;
+      ctx.strokeStyle = ctx.fillStyle = overflowing ? EMBER : fg;
+      ctx.globalAlpha = overflowing ? overflowPulse : (filled ? 1 : .35);
       ctx.lineWidth = 1.2;
       ctx.strokeRect(bx, r.y, VOL_METER.blockW, VOL_METER.blockH);
       if (filled) ctx.fillRect(bx + 2, r.y + 2, VOL_METER.blockW - 4, VOL_METER.blockH - 4);

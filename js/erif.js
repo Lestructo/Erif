@@ -1256,10 +1256,12 @@ const HAND_RECHARGE_TIME = 5;
 // A little flavor detour: instead of rejoining the fight the instant it
 // finishes recharging, a broken hand has a 40% chance to wander down to the
 // volume meters (see VOL_METER/volMeterRect, render.js) and crank the music
-// slider to max first, "helping" before it gets back to the fight — never
-// happens if the music's already maxed, since there'd be nothing to turn
-// up. See startErifVolumeTrip and the 'volumeTripDown'/'volumeTripPress'/
-// 'volumeTripUp' states in updateErifHand.
+// slider to 1.5 (past the normal 0-1 max — see drawVolumeMeters' overflow
+// glow) first, "helping" before it gets back to the fight — never happens
+// if it's already been cranked that far, since there'd be nothing left to
+// turn up, but a normal maxed-out 1.0 doesn't stop it: 1.5 is still a real
+// step up from there. See startErifVolumeTrip and the
+// 'volumeTripDown'/'volumeTripPress'/'volumeTripUp' states in updateErifHand.
 const ERIF_VOLUME_TRIP_CHANCE = .55;
 const ERIF_VOLUME_TRIP_PRESS_TIME = 1.1; // how long the finger lingers on the bar before heading back
 // Own min/max travel-time bounds rather than reusing EMERGE_*/RETRACT_TIME —
@@ -1801,12 +1803,13 @@ function updateErifHand(hand, dt) {
       // break, before an 9th recharge could ever complete).
       if (battle.erifWardPool.length) {
         // See ERIF_VOLUME_TRIP_CHANCE's own comment — a chance to detour
-        // down to the volume meters before actually rejoining, skipped
-        // entirely once the music's already at max. Also gated off the
-        // first 2 wards broken (battle.erifWardsDestroyed) — the earliest
-        // this can ever trigger is the 3rd hand to recharge, not the very
-        // first one, so it doesn't show up right at the start of the fight.
-        if (battle.erifWardsDestroyed >= 3 && musicVolume < 1 && Math.random() < ERIF_VOLUME_TRIP_CHANCE) startErifVolumeTrip(hand);
+        // down to the volume meters before actually rejoining, skipped only
+        // once it's already been cranked to 1.5 (a normal maxed 1.0 still
+        // has room to go). Also gated off the first 2 wards broken
+        // (battle.erifWardsDestroyed) — the earliest this can ever trigger
+        // is the 3rd hand to recharge, not the very first one, so it
+        // doesn't show up right at the start of the fight.
+        if (battle.erifWardsDestroyed >= 3 && musicVolume < 1.5 && Math.random() < ERIF_VOLUME_TRIP_CHANCE) startErifVolumeTrip(hand);
         else beginHandBout(hand, battle.erifWardPool.pop());
       } else hand.state = 'gone';
     }
@@ -1829,7 +1832,11 @@ function updateErifHand(hand, dt) {
     hand.fingers[2].reach = lerp(HAND_FINGERS[2].reachMin, HAND_FINGERS[2].reachMax, clamp(pct / .4, 0, 1));
     if (!hand.volumeTripPressed && pct >= .4) {
       hand.volumeTripPressed = true;
-      musicVolume = 1;
+      // 1.5, not 1 — deliberately past the meter's own normal 0-1 cap (see
+      // drawVolumeMeters, render.js, which glows/pulses the whole bar red
+      // once it detects vol > 1), so this reads as "cranked it too far,"
+      // not just "helpfully set it to max."
+      musicVolume = 1.5;
       tone(260, .04, 'sine', .05); // same cue the volume meter's own click uses
     }
     if (hand.stateT <= 0) {
