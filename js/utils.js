@@ -39,11 +39,28 @@ let pressed = Object.create(null);
 // volume rather than a blunt mute toggle.
 let musicVolume = .5, sfxVolume = .5;
 
+// Browsers create (and keep) the AudioContext 'suspended' until a real user
+// gesture resumes it — ensureAudioCtx (audio.js, loaded after this file, but
+// that's fine: this only ever runs later, off a real keydown/click, same
+// forward-reference convention as handleCanvasClick below) never did this
+// itself. Without an explicit resume, EVERY sound routed through that
+// context — including Erif's own theme, piped through it via
+// createMediaElementSource — can end up silently never playing, on browsers
+// that don't auto-resume on gesture alone (notably Chrome). Whether that
+// happens varies by browser/version, which is exactly why this could look
+// fine for one player and be silent for another on the same build.
+function resumeAudioContextOnGesture() {
+  try {
+    const ac = ensureAudioCtx();
+    if (ac.state === 'suspended') ac.resume();
+  } catch {}
+}
 addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (!keys[k]) pressed[k] = true;
   keys[k] = true;
   if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
+  resumeAudioContextOnGesture();
 });
 addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
@@ -55,6 +72,7 @@ addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 // script has finished loading, same as every other cross-file forward
 // reference in this codebase.
 addEventListener('click', e => {
+  resumeAudioContextOnGesture();
   const rect = canvas.getBoundingClientRect();
   const mx = (e.clientX - rect.left) * (W / rect.width);
   const my = (e.clientY - rect.top) * (H / rect.height);
