@@ -266,23 +266,26 @@ function logAudioLoadError(label, e) {
   const err = e.target && e.target.error;
   console.error(`[audio] ${label} failed to load`, err ? `code ${err.code}: ${err.message || '(no message)'}` : e);
 }
-// Builds a real embedded-MP3 <audio> track, with the optional visualizer
-// routing (createMediaElementSource) kept SEPARATE from the element itself
-// — a routing failure (e.g. a privacy/anti-fingerprinting extension
-// blocking that specific Web Audio API) used to fall back to a fully silent
-// dummy stub (volume permanently 0), taking the whole track down over a
-// failure in what's actually just a cosmetic visualizer feature. Now it
-// just skips the routing and lets the element play through its own normal
-// default output instead — degraded (no visualizer reactivity from this
-// track), not silent.
+// Builds a real embedded-MP3 <audio> track. Used to also route it through
+// the shared Web Audio graph (createMediaElementSource -> visualizerAnalyser
+// -> ctx.destination) so the Reckoning's tension visualizer could react to
+// it — dropped entirely, not just wrapped in a try/catch, after a real case
+// where that routing left a track completely and silently dead: every
+// oscillator-based sound in the game (sharing this exact same AudioContext)
+// played fine, only these MP3 tracks didn't, with zero thrown exception to
+// catch and zero console error — createMediaElementSource had (per spec)
+// already claimed the element's audio output entirely, exclusively into a
+// graph that, for whatever environment-specific reason, just wasn't
+// producing sound. There's no recovering from that once it's connected, so
+// the fix is to never make that connection for these two tracks at all —
+// they now play through their own plain default output, same as any
+// ordinary <audio> tag, with zero Web Audio involvement. The Reckoning's
+// visualizer still reacts to every other concurrent sound (hits, procedural
+// cues) sharing the real analyser — just not this track's own melody.
 function buildThemeAudio(src, label) {
   const audio = new Audio(src);
   audio.loop = true; audio.preload = 'auto';
   audio.addEventListener('error', e => logAudioLoadError(label, e));
-  try {
-    ensureVisualizerAnalyser();
-    ensureAudioCtx().createMediaElementSource(audio).connect(visualizerAnalyser);
-  } catch (err) { console.error(`[audio] ${label} visualizer routing failed, playing without it`, err); }
   return audio;
 }
 let erifThemeAudio = null;
