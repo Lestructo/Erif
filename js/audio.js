@@ -334,8 +334,19 @@ function ensureTrueTheme() {
 // nothing to recover it afterward.
 function playThemeWhenReady(audio, label) {
   const ac = ensureAudioCtx();
-  (ac.state === 'running' ? Promise.resolve() : ac.resume().catch(() => {}))
-    .then(() => audio.play())
+  // Logs unconditionally (not just on failure) — every prior diagnostic
+  // pass only logged errors, and in the one case that actually mattered,
+  // NOTHING logged at all (no error, no confirmed success either), leaving
+  // no way to tell whether resume()/play() ever even ran, hung forever, or
+  // quietly "succeeded" while still producing no audible sound. This makes
+  // every step of the attempt visible regardless of outcome.
+  console.log(`[audio] ${label}: starting — ctx.state=${ac.state}, readyState=${audio.readyState}, networkState=${audio.networkState}, volume=${audio.volume}, muted=${audio.muted}`);
+  (ac.state === 'running' ? Promise.resolve() : ac.resume().catch(err => console.error(`[audio] ${label}: resume() rejected`, err)))
+    .then(() => {
+      console.log(`[audio] ${label}: post-resume ctx.state=${ac.state} — calling play()`);
+      return audio.play();
+    })
+    .then(() => console.log(`[audio] ${label}: play() resolved — paused=${audio.paused}, currentTime=${audio.currentTime}, volume=${audio.volume}`))
     .catch(err => console.error(`[audio] ${label} play() rejected`, err));
 }
 function setMusic(name) {
@@ -358,7 +369,7 @@ function setMusic(name) {
       // touch this since the file itself was already loaded in time).
       a.volume = musicVolume * .15; a.currentTime = .75;
       playThemeWhenReady(a, 'erif-theme');
-    } catch {}
+    } catch (err) { console.error('[audio] setMusic(erif) threw before play() was even attempted', err); }
   } else if (name === 'erifTrue') {
     musicFadeMult = 1;
     try {
@@ -369,7 +380,7 @@ function setMusic(name) {
       // track actually starts, which read as playback lag.
       a.volume = musicVolume * .15; a.currentTime = 2.5;
       playThemeWhenReady(a, 'erif-true-theme');
-    } catch {}
+    } catch (err) { console.error('[audio] setMusic(erifTrue) threw before play() was even attempted', err); }
   }
 }
 function stopMusic() {
