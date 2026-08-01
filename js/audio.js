@@ -319,6 +319,22 @@ function ensureTrueTheme() {
   return trueThemeAudio;
 }
 
+// Plays a real-embedded track only after the shared AudioContext has
+// actually finished resuming, instead of firing play() immediately and
+// racing resumeAudioContextOnGesture's (utils.js) own async .resume() call.
+// That race is exactly what silently killed Erif's theme on some
+// machines/timings: procedural tone()/kick() calls get retried dozens of
+// times a second by the normal music scheduler, so a failed attempt while
+// the context is still mid-resume just gets silently replaced by the next
+// one a moment later — but this is a ONE-SHOT .play() call with no retry,
+// so losing that single race meant the track just never started, with
+// nothing to recover it afterward.
+function playThemeWhenReady(audio, label) {
+  const ac = ensureAudioCtx();
+  (ac.state === 'running' ? Promise.resolve() : ac.resume().catch(() => {}))
+    .then(() => audio.play())
+    .catch(err => console.error(`[audio] ${label} play() rejected`, err));
+}
 function setMusic(name) {
   if (musicMode === 'erif' && name !== 'erif') { try { ensureErifTheme().pause(); } catch {} }
   if (musicMode === 'erifTrue' && name !== 'erifTrue') { try { ensureTrueTheme().pause(); } catch {} }
@@ -338,11 +354,7 @@ function setMusic(name) {
       // lag (preloading it earlier, see startBoss in battle-core.js, didn't
       // touch this since the file itself was already loaded in time).
       a.volume = musicVolume * .15; a.currentTime = .75;
-      // Logged (not silently swallowed) — an autoplay-policy rejection here
-      // is harmless (the resumeAudioContextOnGesture fix, utils.js, should
-      // prevent it in practice), but this used to hide every OTHER possible
-      // rejection reason too, with zero trace of why the theme went silent.
-      a.play().catch(err => console.error('[audio] erif-theme play() rejected', err));
+      playThemeWhenReady(a, 'erif-theme');
     } catch {}
   } else if (name === 'erifTrue') {
     musicFadeMult = 1;
@@ -353,7 +365,7 @@ function setMusic(name) {
       // — a different mastered MP3, opens with more near-silence before the
       // track actually starts, which read as playback lag.
       a.volume = musicVolume * .15; a.currentTime = 2.5;
-      a.play().catch(err => console.error('[audio] erif-true-theme play() rejected', err));
+      playThemeWhenReady(a, 'erif-true-theme');
     } catch {}
   }
 }
