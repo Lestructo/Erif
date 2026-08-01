@@ -254,23 +254,45 @@ function warmSeekPoint(audio, seekTime) {
     }).catch(() => {});
   } catch {}
 }
+// Logs WHY a real-embedded track failed to load/decode instead of the
+// silent nothing this used to be — a ~3.5MB MP3 fetch can fail in ways a
+// synthesized tone (zero network dependency) never would, and that used to
+// be undiagnosable: setMusic('erif')'s own a.play().catch(()=>{}) swallows
+// the rejection too, so a player with a broken theme would see and hear
+// absolutely nothing pointing at why. e.target.error is a MediaError with a
+// numeric .code (1=ABORTED, 2=NETWORK, 3=DECODE, 4=SRC_NOT_SUPPORTED) — the
+// actual browser-diagnosed reason, not a guess.
+function logAudioLoadError(label, e) {
+  const err = e.target && e.target.error;
+  console.error(`[audio] ${label} failed to load`, err ? `code ${err.code}: ${err.message || '(no message)'}` : e);
+}
+// Builds a real embedded-MP3 <audio> track, with the optional visualizer
+// routing (createMediaElementSource) kept SEPARATE from the element itself
+// — a routing failure (e.g. a privacy/anti-fingerprinting extension
+// blocking that specific Web Audio API) used to fall back to a fully silent
+// dummy stub (volume permanently 0), taking the whole track down over a
+// failure in what's actually just a cosmetic visualizer feature. Now it
+// just skips the routing and lets the element play through its own normal
+// default output instead — degraded (no visualizer reactivity from this
+// track), not silent.
+function buildThemeAudio(src, label) {
+  const audio = new Audio(src);
+  audio.loop = true; audio.preload = 'auto';
+  audio.addEventListener('error', e => logAudioLoadError(label, e));
+  try {
+    ensureVisualizerAnalyser();
+    ensureAudioCtx().createMediaElementSource(audio).connect(visualizerAnalyser);
+  } catch (err) { console.error(`[audio] ${label} visualizer routing failed, playing without it`, err); }
+  return audio;
+}
 let erifThemeAudio = null;
 function ensureErifTheme() {
   if (!erifThemeAudio) {
     try {
-      erifThemeAudio = new Audio('assets/erif-theme.mp3'); erifThemeAudio.loop = true; erifThemeAudio.preload = 'auto';
+      erifThemeAudio = buildThemeAudio('assets/erif-theme.mp3', 'erif-theme');
       erifThemeAudio.addEventListener('loadedmetadata', () => warmSeekPoint(erifThemeAudio, .75));
-      // Routes this element's actual output through the shared analyser (see
-      // ensureVisualizerAnalyser above) instead of its own default output —
-      // createMediaElementSource claims the element's audio graph entirely,
-      // so from this point on it's only audible via wherever this source
-      // ends up connected (the analyser already connects onward to
-      // ctx.destination). Only ever done once per element — calling this
-      // twice on the same <audio> throws.
-      ensureVisualizerAnalyser();
-      ensureAudioCtx().createMediaElementSource(erifThemeAudio).connect(visualizerAnalyser);
     }
-    catch { erifThemeAudio = { play: () => Promise.resolve(), pause() {}, volume: 0, currentTime: 0, paused: true }; }
+    catch (err) { console.error('[audio] erif-theme setup failed', err); erifThemeAudio = { play: () => Promise.resolve(), pause() {}, volume: 0, currentTime: 0, paused: true }; }
   }
   return erifThemeAudio;
 }
@@ -282,7 +304,7 @@ let trueThemeAudio = null;
 function ensureTrueTheme() {
   if (!trueThemeAudio) {
     try {
-      trueThemeAudio = new Audio('assets/erif-true-theme.mp3'); trueThemeAudio.loop = true; trueThemeAudio.preload = 'auto';
+      trueThemeAudio = buildThemeAudio('assets/erif-true-theme.mp3', 'erif-true-theme');
       // Seeking a compressed MP3 mid-stream can stall for a moment while the
       // browser locates/decodes that point — pre-seek (and pre-warm, see
       // warmSeekPoint above) here, way ahead of the actual fight, so the real
@@ -291,11 +313,8 @@ function ensureTrueTheme() {
       // instantly instead of appearing to wait on the arena box's grow
       // animation.
       trueThemeAudio.addEventListener('loadedmetadata', () => warmSeekPoint(trueThemeAudio, 2.5));
-      // Same analyser routing as ensureErifTheme above.
-      ensureVisualizerAnalyser();
-      ensureAudioCtx().createMediaElementSource(trueThemeAudio).connect(visualizerAnalyser);
     }
-    catch { trueThemeAudio = { play: () => Promise.resolve(), pause() {}, volume: 0, currentTime: 0, paused: true }; }
+    catch (err) { console.error('[audio] erif-true-theme setup failed', err); trueThemeAudio = { play: () => Promise.resolve(), pause() {}, volume: 0, currentTime: 0, paused: true }; }
   }
   return trueThemeAudio;
 }
@@ -319,7 +338,11 @@ function setMusic(name) {
       // lag (preloading it earlier, see startBoss in battle-core.js, didn't
       // touch this since the file itself was already loaded in time).
       a.volume = musicVolume * .15; a.currentTime = .75;
-      a.play().catch(() => {}); // autoplay policies can reject this; harmless if so
+      // Logged (not silently swallowed) — an autoplay-policy rejection here
+      // is harmless (the resumeAudioContextOnGesture fix, utils.js, should
+      // prevent it in practice), but this used to hide every OTHER possible
+      // rejection reason too, with zero trace of why the theme went silent.
+      a.play().catch(err => console.error('[audio] erif-theme play() rejected', err));
     } catch {}
   } else if (name === 'erifTrue') {
     musicFadeMult = 1;
@@ -330,7 +353,7 @@ function setMusic(name) {
       // — a different mastered MP3, opens with more near-silence before the
       // track actually starts, which read as playback lag.
       a.volume = musicVolume * .15; a.currentTime = 2.5;
-      a.play().catch(() => {});
+      a.play().catch(err => console.error('[audio] erif-true-theme play() rejected', err));
     } catch {}
   }
 }
