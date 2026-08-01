@@ -1665,6 +1665,14 @@ function drawBattle() {
 
     const shrinkS = hazardShrinkScale(p.ageExpireT, p.ageShrinkWindow);
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(ang); ctx.scale(shrinkS, shrinkS);
+    // Fades toward grey once it's crossed hazardHitRadius's own harmless
+    // threshold (hazards.js) — a visible "this can't hurt you anymore" cue,
+    // distinct from the shrink itself (which alone still reads as "smaller
+    // but still dangerous"). A CSS filter rather than touching globalAlpha —
+    // several branches below reassign globalAlpha outright rather than
+    // multiplying it, which would silently clobber a dim applied here first.
+    const harmless = hazardHarmlessAmount(shrinkS);
+    if (harmless > 0) ctx.filter = `grayscale(${Math.round(harmless * 100)}%) brightness(${Math.round(lerp(100, 55, harmless))}%)`;
     if (isShard) {
       ctx.strokeStyle = p.lying ? EMBER : '#fff';
       ctx.lineWidth = 2;
@@ -1685,6 +1693,9 @@ function drawBattle() {
     // shield (see updateMaskShards, bosses.js), so it reads purely as a dodge.
     const shrinkS = hazardShrinkScale(w.ageExpireT, w.ageShrinkWindow);
     ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(w.wobble); ctx.scale(shrinkS, shrinkS);
+    // See the spears loop above for why this is a filter, not globalAlpha.
+    const maskShardHarmless = hazardHarmlessAmount(shrinkS);
+    if (maskShardHarmless > 0) ctx.filter = `grayscale(${Math.round(maskShardHarmless * 100)}%) brightness(${Math.round(lerp(100, 55, maskShardHarmless))}%)`;
     ctx.globalAlpha = .85; ctx.strokeStyle = EMBER; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(0, -9); ctx.lineTo(7, 0); ctx.lineTo(0, 9); ctx.lineTo(-7, 0); ctx.closePath(); ctx.stroke();
     ctx.globalAlpha = .3 + .15 * Math.sin(performance.now() / 160);
@@ -1697,7 +1708,11 @@ function drawBattle() {
     // so it's deliberately plain: a small ember with a faint trail above it
     // showing where it fell from, nothing to read beyond "don't stand here."
     const shrinkS = hazardShrinkScale(g.ageExpireT, g.ageShrinkWindow);
-    ctx.save(); ctx.translate(g.x, g.y); ctx.scale(shrinkS, shrinkS); ctx.globalAlpha = .9; ctx.fillStyle = EMBER;
+    ctx.save(); ctx.translate(g.x, g.y); ctx.scale(shrinkS, shrinkS);
+    // See the spears loop above for why this is a filter, not globalAlpha.
+    const sandHarmless = hazardHarmlessAmount(shrinkS);
+    if (sandHarmless > 0) ctx.filter = `grayscale(${Math.round(sandHarmless * 100)}%) brightness(${Math.round(lerp(100, 55, sandHarmless))}%)`;
+    ctx.globalAlpha = .9; ctx.fillStyle = EMBER;
     ctx.beginPath(); ctx.arc(0, 0, g.r * .55, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = EMBER;
     // 3 jittered strands instead of one static line — a heavier "falling
@@ -1721,8 +1736,12 @@ function drawBattle() {
     // actually got bigger through every later size increase to o.r itself
     // (only the hitbox did). Scaling by the orb's real current radius here
     // is what makes it visually match.
-    const hgScale = o.r / 11 * hazardShrinkScale(o.ageExpireT, o.ageShrinkWindow);
+    const orbShrinkS = hazardShrinkScale(o.ageExpireT, o.ageShrinkWindow);
+    const hgScale = o.r / 11 * orbShrinkS;
     ctx.scale(hgScale, hgScale);
+    // See the spears loop above for why this is a filter, not globalAlpha.
+    const orbHarmless = hazardHarmlessAmount(orbShrinkS);
+    if (orbHarmless > 0) ctx.filter = `grayscale(${Math.round(orbHarmless * 100)}%) brightness(${Math.round(lerp(100, 55, orbHarmless))}%)`;
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(-8, -9); ctx.lineTo(8, -9); ctx.lineTo(1.5, 0); ctx.lineTo(8, 9);
@@ -1740,6 +1759,9 @@ function drawBattle() {
     // rather than a fixed spawn-time angle.
     const ang = Math.atan2(f.vy, f.vx), shrinkS = hazardShrinkScale(f.ageExpireT, f.ageShrinkWindow);
     ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(ang); ctx.scale(shrinkS, shrinkS);
+    // See the spears loop above for why this is a filter, not globalAlpha.
+    const flagHarmless = hazardHarmlessAmount(shrinkS);
+    if (flagHarmless > 0) ctx.filter = `grayscale(${Math.round(flagHarmless * 100)}%) brightness(${Math.round(lerp(100, 55, flagHarmless))}%)`;
     ctx.strokeStyle = ctx.fillStyle = '#fff'; ctx.lineWidth = 1.5;
     line(9, 0, -9, 0, 1.5);
     ctx.beginPath(); ctx.moveTo(-9, 0); ctx.lineTo(-3, -8); ctx.lineTo(-3, 2); ctx.closePath(); ctx.fill();
@@ -1790,6 +1812,9 @@ function drawBattle() {
     // a generic ink blot, and the tumble makes its motion read clearly.
     const rot = Math.atan2(w.vy, w.vx) + w.wobble * w.spin * .3, shrinkS = hazardShrinkScale(w.ageExpireT, w.ageShrinkWindow);
     ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(rot); ctx.scale(shrinkS, shrinkS);
+    // See the spears loop above for why this is a filter, not globalAlpha.
+    const echoBookHarmless = hazardHarmlessAmount(shrinkS);
+    if (echoBookHarmless > 0) ctx.filter = `grayscale(${Math.round(echoBookHarmless * 100)}%) brightness(${Math.round(lerp(100, 55, echoBookHarmless))}%)`;
     // Regular tumbling book: make it larger (2x)
     ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
     ctx.fillRect(-9, -12, 18, 24); ctx.strokeRect(-9, -12, 18, 24);
@@ -1823,6 +1848,9 @@ function drawBattle() {
     ctx.restore();
     const shrinkS = hazardShrinkScale(w.ageExpireT, w.ageShrinkWindow);
     ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(w.rot); ctx.scale(shrinkS, shrinkS);
+    // See the spears loop above for why this is a filter, not globalAlpha.
+    const weavingBookHarmless = hazardHarmlessAmount(shrinkS);
+    if (weavingBookHarmless > 0) ctx.filter = `grayscale(${Math.round(weavingBookHarmless * 100)}%) brightness(${Math.round(lerp(100, 55, weavingBookHarmless))}%)`;
     // Weaving book (ember/red) — keep original (smaller) size
     ctx.fillStyle = EMBER; ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
     ctx.fillRect(-4.5, -6, 9, 12); ctx.strokeRect(-4.5, -6, 9, 12);
@@ -1836,6 +1864,12 @@ function drawBattle() {
     const speed = Math.hypot(p.vx, p.vy), ang = Math.atan2(p.vy, p.vx);
     const shrinkS = hazardShrinkScale(p.ageExpireT, p.ageShrinkWindow);
     ctx.save(); ctx.translate(p.x, p.y); ctx.scale(shrinkS, shrinkS);
+    // See the spears loop above for why this is a filter, not globalAlpha —
+    // persists correctly through the nested save/restore blocks below too,
+    // since each inner save() snapshots whatever's active at that point
+    // (including this filter) and its restore() returns to that same state.
+    const bulletHarmless = hazardHarmlessAmount(shrinkS);
+    if (bulletHarmless > 0) ctx.filter = `grayscale(${Math.round(bulletHarmless * 100)}%) brightness(${Math.round(lerp(100, 55, bulletHarmless))}%)`;
     ctx.save(); ctx.globalAlpha = .35; ctx.strokeStyle = '#fff';
     line(0, 0, -Math.cos(ang) * clamp(speed * .035, 8, 24), -Math.sin(ang) * clamp(speed * .035, 8, 24), 2);
     ctx.restore();

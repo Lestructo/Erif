@@ -426,7 +426,17 @@ function updateGaleFlags(dt) {
     f.vx = Math.cos(newA) * f.speed; f.vy = Math.sin(newA) * f.speed;
     f.x += f.vx * dt + Math.cos(f.wave) * 14 * dt;
     f.y += f.vy * dt + Math.sin(f.wave) * 14 * dt;
-    const side = velocityToSide(f.vx, f.vy);
+    // Based on the flag's actual current POSITION relative to the player
+    // (s.x-f.x, s.y-f.y — the direction it'd need to travel to reach the
+    // soul), not its live velocity (f.vx, f.vy) — this hazard continuously
+    // curves toward the player (the steer above, capped at 1.6 rad/s), so
+    // its velocity can meaningfully diverge from where it actually IS mid-
+    // curve. shieldFacingBlocks's own tolerance fallback already computes
+    // the true position angle independently (hitA, hazards.js) — using
+    // velocity here meant the exact-match branch and the fallback could
+    // disagree with each other on the same flag, which is what read as
+    // "blocking it doesn't always register, isn't accurate."
+    const side = velocityToSide(s.x - f.x, s.y - f.y);
     const hitRadius = s.r + hazardHitRadius(f) - 2, d = dist(f.x, f.y, s.x, s.y);
     if (shieldFacingBlocks(f.x, f.y, side)) {
       const blockRadius = hitRadius + UPGRADE_CATALOG.shield.perStack * (save.upgrades.shield || 0);

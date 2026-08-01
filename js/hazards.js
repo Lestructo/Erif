@@ -165,8 +165,31 @@ function hazardShrinkScale(expireT, shrinkWindow) {
 // no-op there) — a hazard could still hit you at full size well after it
 // looked mostly gone. Takes the whole object rather than separate
 // r/ageExpireT/ageShrinkWindow args so every call site stays a one-liner.
+// Once shrunk to HAZARD_HARMLESS_THRESHOLD of its size or smaller, it's hard
+// enough to even see that a proportionally-tiny-but-still-live hitbox isn't
+// fair — damage (and shield-blocking, for hazards that have it — nothing to
+// block once nothing can hit) is disabled outright below that point rather
+// than shrinking the hitbox all the way to a literal pixel. -Infinity
+// rather than 0 so every hit-test formula's own small constant offsets/
+// shield bonuses (e.g. `s.r + hazardHitRadius(o) - 2`) still always land
+// solidly false, not just mostly false. render.js's own drawing code fades
+// the hazard toward grey over this same threshold (see hazardHarmlessAmount
+// below) as the visible cue that it's crossed into "can't hurt you" — the
+// shrink alone reads as "still dangerous, just smaller" right up until it's
+// nearly invisible, which doesn't actually communicate the moment it
+// actually went inert.
+const HAZARD_HARMLESS_THRESHOLD = .25;
 function hazardHitRadius(o) {
-  return o.r * hazardShrinkScale(o.ageExpireT, o.ageShrinkWindow);
+  const scale = hazardShrinkScale(o.ageExpireT, o.ageShrinkWindow);
+  return scale <= HAZARD_HARMLESS_THRESHOLD ? -Infinity : o.r * scale;
+}
+// 0 above the harmless threshold (a real, still-dangerous hazard, drawn at
+// its normal colors), easing to 1 as shrinkScale approaches 0 — render.js
+// uses this to blend a hazard's colors toward grey and dim it further once
+// it's crossed into "can't deal damage anymore" territory.
+function hazardHarmlessAmount(shrinkScale) {
+  if (shrinkScale > HAZARD_HARMLESS_THRESHOLD) return 0;
+  return 1 - shrinkScale / HAZARD_HARMLESS_THRESHOLD;
 }
 
 // ---- Ring / gap rotating-dodge (Hourglass family) ----
