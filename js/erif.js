@@ -2043,6 +2043,13 @@ function beginErifTrueFinal() {
   if (!battle || battle.erifHandsStarted) return;
   battle.erifHandsStarted = true;
   bumpErifPhase(PHASE_LAST_WAGER);
+  // The Reckoning is a genuinely fresh climactic encounter (new hands, new
+  // arena, new music) — carrying over whatever HP was left from Reprise/
+  // Convergence/Enraged/Final Convergence let a player limp into it on a
+  // sliver of health with no way to recover, unlike every other phase
+  // transition before this one (none of which ever restore HP either, but
+  // none of them are a hard reset of the whole fight like this one is).
+  battle.hp = battle.maxHp;
   battle.erifWardPool = shuffleArray(REPRISE_ORDER);
   battle.erifHands = [makeErifHand(0), makeErifHand(1)];
   battle.erifWardsDestroyed = 0;
