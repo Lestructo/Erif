@@ -70,9 +70,9 @@ const BOSS = {
   executioner: { display: 'THE EXECUTIONER', ward: 'EXECUTIONER WARD', duration: 30, hp: 3, intro: "Turn to face the heat. Turning away only lets it catch you." },
   witness:     { display: 'THE WITNESS',     ward: 'WITNESS WARD',     duration: 30, hp: 3, intro: "Three accounts of what happened here. Two of them are lies. Find the one that actually saw it." },
   // duration is a generous safety cap here too, not the real win condition —
-  // the Archivist is won by completing ARCHIVIST_WIN_ROUNDS sequences (see
-  // bosses.js), specifically so waiting out a clock is never a substitute
-  // for actually memorizing the pattern.
+  // the Archivist is won by completing archivistWinRounds(hard) sequences
+  // (see bosses.js), specifically so waiting out a clock is never a
+  // substitute for actually memorizing the pattern.
   archivist:   { display: 'THE ARCHIVIST',   ward: 'ARCHIVIST WARD',   duration: 90, hp: 3, intro: 'I will show you what the ash remembers, once. Do not make me show you twice.' },
   oracle:      { display: 'THE ORACLE',      ward: 'ORACLE WARD',      duration: 30, hp: 3, intro: 'One plume of smoke tells the truth. The other three are warnings.' },
   // The ring/gap dodge that used to belong to the Hourglass, reskinned — a

@@ -1713,7 +1713,7 @@ function drawBattle() {
     const sandHarmless = hazardHarmlessAmount(shrinkS);
     if (sandHarmless > 0) ctx.filter = `grayscale(${Math.round(sandHarmless * 100)}%) brightness(${Math.round(lerp(100, 55, sandHarmless))}%)`;
     ctx.globalAlpha = .9; ctx.fillStyle = EMBER;
-    ctx.beginPath(); ctx.arc(0, 0, g.r * .55, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, g.r * SAND_GRAIN_VISUAL_SCALE, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = EMBER;
     // 3 jittered strands instead of one static line — a heavier "falling
     // sand" look. Jitter is derived from the grain's own (constant, since it
@@ -2186,7 +2186,8 @@ function drawBattle() {
     // just a generous safety cap now (see startEchoRound's win condition in
     // bosses.js), same convention as Erif's own duration. Showing round
     // progress instead is the number that's actually true to watch.
-    text(`ROUND ${Math.min(battle.echoRound, ARCHIVIST_WIN_ROUNDS)}/${ARCHIVIST_WIN_ROUNDS}`, 705, uiY + 47, 15);
+    const winRounds = archivistWinRounds(difficultyTier === 'hard');
+    text(`ROUND ${Math.min(battle.echoRound, winRounds)}/${winRounds}`, 705, uiY + 47, 15);
   } else if (battle.type !== 'erif') {
     // Erif's own duration is the same kind of generous safety cap as the
     // Archivist's (see BOSS.erif in data.js) — his fight is won through its

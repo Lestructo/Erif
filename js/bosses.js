@@ -17,6 +17,14 @@ function beginSandPhase(hard, phase) {
 // position, not the shield, so it's a different kind of pressure than the
 // volley/needle baseline below. Its fall speed bakes in the current
 // timeScale at spawn time, same convention as spawnSpear baking in `hard`.
+// The drawn grain (render.js) is only 55% of g.r — a bigger radius reads as
+// a heavier grain via its fall/impact feel (spawnSandGrain's own comment)
+// without needing the sprite itself to look literally that big. The
+// hit-test below shares this same constant so the hitbox always matches
+// what's actually drawn — it used to compare against the raw, undrawn g.r
+// directly, up to 82% bigger than the visible dot (rand(6,18)*3 at the slow
+// phase's biggest), which read as getting hit nowhere near the grain.
+const SAND_GRAIN_VISUAL_SCALE = .55;
 function spawnSandGrain(hard = false) {
   const b = battle.box;
   const x = rand(b.x + 14, b.x + b.w - 14);
@@ -35,7 +43,7 @@ function updateSandGrains(dt) {
   const b = battle.box, s = battle.soul;
   for (const g of battle.sandGrains) {
     g.y += g.vy * dt;
-    if (dist(g.x, g.y, s.x, s.y) < s.r + hazardHitRadius(g) - 2) { g.dead = true; hurt(); }
+    if (dist(g.x, g.y, s.x, s.y) < s.r + hazardHitRadius(g) * SAND_GRAIN_VISUAL_SCALE - 2) { g.dead = true; hurt(); }
     // A brief dust puff right as a grain lands at the arena floor (not the
     // player) — a miss used to just silently vanish a little further down.
     else if (!g.puffed && g.y >= b.y + b.h) { g.puffed = true; spawnSparks(g.x, b.y + b.h, 3, { color: EMBER, speed: [20, 50], life: .25 }); noiseHit(.05, .006, 2600, null, 'sfx'); }
@@ -305,14 +313,15 @@ function beginVerdictSpiral(hard = false) {
   battle.ringArcDirection = choose([-1, 1]);
   battle.ringSwitchTimer = hard ? rand(2.2, 3.2) : rand(3.2, 4.6);
   // The very first burst ring used to spawn alone at a much closer radius
-  // (180, pulled in from the usual full 360) to avoid a dead "waiting" gap
-  // right at the transition — but that just moved the gap a beat later: one
-  // near ring popped in, shrank away fast, and then every ring after it was
-  // back to spawning all the way out at 360 with nothing in between. Now
+  // (pulled in from the usual full 360) to avoid a dead "waiting" gap right
+  // at the transition — but that just moved the gap a beat later: one near
+  // ring popped in, shrank away fast, and then every ring after it was back
+  // to spawning all the way out at 360 with nothing in between. Now
   // spawnVerdictContinuousRing itself ramps the first RING_ENTRY_RAMP_COUNT
-  // rings' spawn radius from that same close-in 180 up to the full 360 (see
-  // battle.ringArcRingCount below), so the spiral corridor actually fills in
-  // smoothly instead of jumping from one lone near ring straight to far ones.
+  // rings' spawn radius from that same close-in start (240) up to the full
+  // 360 (see battle.ringArcRingCount below), so the spiral corridor actually
+  // fills in smoothly instead of jumping from one lone near ring straight to
+  // far ones.
   battle.ringArcRingCount = 0;
   spawnVerdictContinuousRing(hard);
   battle.spawn = hard ? .10 : .13; // this phase's normal opening cadence (phase=0), so the next ring lands on schedule
@@ -326,7 +335,7 @@ function spawnVerdictContinuousRing(hard = false) {
   battle.ringGapA += battle.ringArcDirection * step;
   const tinyWobble = Math.sin(battle.t * (hard ? 2.3 : 1.8)) * .012;
   const rampT = clamp((battle.ringArcRingCount || 0) / RING_ENTRY_RAMP_COUNT, 0, 1);
-  const startRadius = lerp(180, 360, rampT);
+  const startRadius = lerp(240, 360, rampT);
   battle.ringArcRingCount = (battle.ringArcRingCount || 0) + 1;
   spawnRing(hard, battle.ringGapA + tinyWobble, startRadius, battle.ringArcDirection * (hard ? .05 : .04), hard ? 205 : 188, hard ? .37 : .44);
 }
@@ -366,7 +375,7 @@ function updateVerdict(dt, hard = false, moveFn = moveSoulFree) {
 
   battle.spawn -= dt;
   if (battle.spawn <= 0) {
-    if (!rotating) { spawnVerdictRing(hard); battle.spawn = hard ? .62 : .85; }
+    if (!rotating) { spawnVerdictRing(hard); battle.spawn = hard ? .75 : 1; }
     else {
       spawnVerdictContinuousRing(hard);
       const phase = clamp((verdictPhaseProgress(hard) - .5) / .5, 0, 1);
@@ -436,9 +445,39 @@ function updateGaleFlags(dt) {
     // velocity here meant the exact-match branch and the fallback could
     // disagree with each other on the same flag, which is what read as
     // "blocking it doesn't always register, isn't accurate."
-    const side = velocityToSide(s.x - f.x, s.y - f.y);
-    const hitRadius = s.r + hazardHitRadius(f) - 2, d = dist(f.x, f.y, s.x, s.y);
-    if (shieldFacingBlocks(f.x, f.y, side)) {
+    // Both the shield-facing angle AND the actual block/hit distance are
+    // now measured against the closest point on the drawn pole itself — a
+    // straight segment from tail to tip, ±9 from center along the current
+    // heading — not the flag's own center. The pole is an 18px rod at a
+    // hazard whose entire block range used to be only ~9px of "reach"
+    // around the center (see hazardHitRadius's f.r=11, sized purely to fake
+    // that reach via a circle), so the CENTER could still be 9px short of
+    // registering anything at the exact moment the tip was already visibly
+    // touching the player's shield — "the stick is stuck in my shield and
+    // nothing happens until the flag itself reaches me." A real point-to-
+    // segment projection (not just sampling tip/tail/center) finds the
+    // true closest point anywhere along the pole, not just at its ends.
+    const ang = Math.atan2(f.vy, f.vx), poleHalfLen = 9;
+    const tipX = f.x + Math.cos(ang) * poleHalfLen, tipY = f.y + Math.sin(ang) * poleHalfLen;
+    const tailX = f.x - Math.cos(ang) * poleHalfLen, tailY = f.y - Math.sin(ang) * poleHalfLen;
+    const segDX = tipX - tailX, segDY = tipY - tailY, segLenSq = segDX * segDX + segDY * segDY;
+    const segT = clamp(segLenSq > 0 ? ((s.x - tailX) * segDX + (s.y - tailY) * segDY) / segLenSq : 0, 0, 1);
+    const nearX = tailX + segDX * segT, nearY = tailY + segDY * segT;
+    const side = velocityToSide(s.x - nearX, s.y - nearY);
+    // A deliberate forgiving "thickness" around the pole/cloth shape
+    // itself, not derived from f.r (11) — that value only ever existed to
+    // fake the pole's own length-reach via a center-based circle, which
+    // nearX/nearY above now measures directly instead, so reusing it here
+    // (even net of poleHalfLen) left a barely-there ~2px hitbox, tight
+    // enough to feel unfairly precise for both dodging and blocking.
+    // Matches the cloth pennant's own ~8px perpendicular bulk. Still
+    // shrink/harmless-aware the same way hazardHitRadius is for every other
+    // hazard, just driven by this hazard's real thickness instead of f.r.
+    const GALE_FLAG_THICKNESS = 7;
+    const flagShrinkS = hazardShrinkScale(f.ageExpireT, f.ageShrinkWindow);
+    const thicknessRadius = flagShrinkS <= HAZARD_HARMLESS_THRESHOLD ? -Infinity : GALE_FLAG_THICKNESS * flagShrinkS;
+    const hitRadius = s.r + thicknessRadius - 2, d = dist(nearX, nearY, s.x, s.y);
+    if (shieldFacingBlocks(nearX, nearY, side)) {
       const blockRadius = hitRadius + UPGRADE_CATALOG.shield.perStack * (save.upgrades.shield || 0);
       if (d < blockRadius) { f.dead = true; tone(480, .05, 'square', .022); spawnSparks(f.x, f.y, Math.round(4 + f.r * .3), { color: EMBER, speed: [40, 90], life: .3 }); }
     } else if (d < hitRadius) { f.dead = true; hurt(); }
@@ -896,7 +935,15 @@ const ECHO_SIGIL_RADIUS = 30;
 // The trial is won by actually completing this many sequences, not by
 // surviving a clock — see updateArchivist's resolve handling. BOSS.archivist's
 // `duration` is just a generous safety cap now, same convention as Erif's.
-const ARCHIVIST_WIN_ROUNDS = 5;
+// Both tiers capped at 4 (was 5 for both, then briefly 5-hard/4-normal) —
+// Normal's own length ramp caps at 5 symbols, which round 4 already reaches
+// (2+4-1=5), so its old 5th round was just a flat repeat of round 4 with
+// nothing new. Hard's length ramp (see startEchoRound's `hard ? 8 : 5` cap)
+// was tuned assuming a 5th round to actually reach length 8 — capped here at
+// 4 rounds instead, its own ramp now tops out at 7 (4+4-1) rather than 8, a
+// deliberate tradeoff: Hard loses its single hardest round in exchange for
+// matching Normal's round count.
+function archivistWinRounds(hard) { return 4; }
 // Every memory-match round everywhere (standalone Archivist, Erif's Reprise/
 // True Final quick-match gate, Enraged's own memory segments) is capped at
 // this many seconds from the moment it starts (reveal included) — without
@@ -1129,7 +1176,7 @@ function updateArchivist(dt, hard = false) {
       // failed rounds don't count, only real successes (see echoSuccesses++
       // above). This is the trial's real win condition now; the generic
       // duration timeout is just a safety net, same as Erif's own fight.
-      if (battle.echoSuccesses >= ARCHIVIST_WIN_ROUNDS) { finishBattle(true); return; }
+      if (battle.echoSuccesses >= archivistWinRounds(hard)) { finishBattle(true); return; }
       // A failed round retries at the same length instead of advancing —
       // echoRound (which sets the next sequence's length in startEchoRound)
       // only climbs on an actual success, so a miss doesn't also make the
@@ -1141,10 +1188,11 @@ function updateArchivist(dt, hard = false) {
 
   battle.echoBookTimer -= dt;
   if (battle.echoBookTimer <= 0) {
-    // Spawn rate ramps up across rounds (1 at round 1 → ARCHIVIST_WIN_ROUNDS
+    // Spawn rate ramps up across rounds (1 at round 1 → archivistWinRounds
     // at the last one) so the continuous book pressure grows alongside the
     // sequence length, instead of staying flat while only the sigils get harder.
-    const ramp = Math.min(battle.echoRound - 1, ARCHIVIST_WIN_ROUNDS - 1) / (ARCHIVIST_WIN_ROUNDS - 1);
+    const winRounds = archivistWinRounds(hard);
+    const ramp = Math.min(battle.echoRound - 1, winRounds - 1) / (winRounds - 1);
     spawnEchoBook(hard);
     if (hard && Math.random() < .3 + ramp * .3) spawnEchoBook(hard); // a second book, more often as rounds climb, on hard
     const mult = 1 - ramp * .45;
